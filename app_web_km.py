@@ -16,117 +16,175 @@ from auditar_engine import (
 )
 
 st.set_page_config(
-    page_title="Consigaz - Auditoria de KM de OSs",
+    page_title="Consigaz - Auditoria de KM por Dia",
     page_icon="🗺️",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS forçando Tema Claro e estilos da tabela com destaque
+# CSS completo para garantir Modo Claro perfeito e sem textos brancos invisíveis
 st.markdown("""
 <style>
-    /* Força fundo claro */
-    .stApp {
-        background-color: #FFFFFF !important;
-        color: #212529 !important;
-    }
-    header, [data-testid="stHeader"] {
-        background-color: #FFFFFF !important;
-    }
-    .main-header {
-        font-size: 26px;
-        font-weight: 800;
-        color: #1F4E79;
-        margin-bottom: 2px;
-    }
-    .sub-header {
-        font-size: 15px;
-        color: #555555;
-        margin-bottom: 20px;
-    }
-    .stButton>button {
-        background-color: #1F4E79;
-        color: white;
-        font-weight: 600;
-        border-radius: 6px;
-        height: 44px;
-    }
-    .stButton>button:hover {
-        background-color: #163857;
-        color: white;
-    }
-    /* Estilo da tabela personalizada com destaque para KM alto */
-    .table-km {
-        width: 100%;
-        border-collapse: collapse;
-        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-        font-size: 13.5px;
-        margin-top: 10px;
-        margin-bottom: 20px;
-    }
-    .table-km th {
-        background-color: #1F4E79;
-        color: #FFFFFF;
-        text-align: center;
-        padding: 10px 8px;
-        font-weight: 600;
-        border: 1px solid #163857;
-    }
-    .table-km td {
-        padding: 8px 10px;
-        border: 1px solid #E0E0E0;
-        color: #333333;
-        vertical-align: middle;
-    }
-    .table-km tr:nth-child(even) {
-        background-color: #F8F9FA;
-    }
-    .table-km tr:hover {
-        background-color: #EDF2F7;
-    }
-    .row-highlight {
-        background-color: #FFF3CD !important;
-        border-left: 4px solid #D39E00 !important;
-    }
-    .badge-alto {
-        background-color: #DC3545;
-        color: white;
-        padding: 3px 8px;
-        border-radius: 12px;
-        font-size: 11.5px;
-        font-weight: 700;
-        display: inline-block;
-    }
-    .badge-normal {
-        background-color: #28A745;
-        color: white;
-        padding: 3px 8px;
-        border-radius: 12px;
-        font-size: 11.5px;
-        font-weight: 600;
-        display: inline-block;
-    }
-    .btn-maps {
-        background-color: #0D6EFD;
-        color: white !important;
-        padding: 5px 12px;
-        border-radius: 4px;
-        text-decoration: none;
-        font-weight: 600;
-        font-size: 12px;
-        display: inline-block;
-        transition: 0.2s;
-    }
-    .btn-maps:hover {
-        background-color: #0B5ED7;
-        color: white !important;
-    }
+.stApp, [data-testid="stAppViewContainer"], [data-testid="stHeader"], [data-testid="stToolbar"] {
+    background-color: #FFFFFF !important;
+    color: #1E293B !important;
+}
+[data-testid="stSidebar"], [data-testid="stSidebarContent"] {
+    background-color: #F8FAFC !important;
+    color: #1E293B !important;
+}
+label, [data-testid="stWidgetLabel"] p, [data-testid="stMarkdownContainer"] p, [data-testid="stCaptionContainer"] p, div[data-baseweb="select"] span {
+    color: #1E293B !important;
+}
+h1, h2, h3, h4, h5, h6 {
+    color: #1F4E79 !important;
+}
+button[data-baseweb="tab"] p {
+    color: #475569 !important;
+    font-weight: 600 !important;
+    font-size: 15px !important;
+}
+button[data-baseweb="tab"][aria-selected="true"] p {
+    color: #1F4E79 !important;
+    font-weight: 700 !important;
+}
+.stButton>button {
+    background-color: #1F4E79 !important;
+    color: #FFFFFF !important;
+    font-weight: 600 !important;
+    border-radius: 6px !important;
+    height: 44px !important;
+    border: none !important;
+}
+.stButton>button p, .stButton>button span {
+    color: #FFFFFF !important;
+}
+.stButton>button:hover {
+    background-color: #163857 !important;
+    color: #FFFFFF !important;
+}
+.main-header {
+    font-size: 26px;
+    font-weight: 800;
+    color: #1F4E79 !important;
+    margin-bottom: 2px;
+}
+.sub-header {
+    font-size: 15px;
+    color: #475569 !important;
+    margin-bottom: 18px;
+}
+.table-km {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    font-size: 13.5px;
+    margin-top: 8px;
+    margin-bottom: 18px;
+    background-color: #FFFFFF;
+}
+.table-km th {
+    background-color: #1F4E79 !important;
+    color: #FFFFFF !important;
+    text-align: center;
+    padding: 10px 8px;
+    font-weight: 600;
+    border: 1px solid #163857;
+}
+.table-km td {
+    padding: 9px 10px;
+    border: 1px solid #CBD5E1;
+    color: #1E293B !important;
+    vertical-align: middle;
+}
+.table-km tr:nth-child(even) {
+    background-color: #F8FAFC;
+}
+.table-km tr:hover {
+    background-color: #E2E8F0;
+}
+.row-highlight {
+    background-color: #FEF3C7 !important;
+}
+.row-highlight td {
+    background-color: #FEF3C7 !important;
+    color: #78350F !important;
+}
+.row-total td {
+    background-color: #1F4E79 !important;
+    color: #FFFFFF !important;
+    font-weight: 800 !important;
+    font-size: 14px !important;
+}
+.badge-alto {
+    background-color: #DC2626 !important;
+    color: #FFFFFF !important;
+    padding: 4px 10px;
+    border-radius: 12px;
+    font-size: 12.5px;
+    font-weight: 700;
+    display: inline-block;
+}
+.badge-normal {
+    background-color: #16A34A !important;
+    color: #FFFFFF !important;
+    padding: 4px 10px;
+    border-radius: 12px;
+    font-size: 12.5px;
+    font-weight: 600;
+    display: inline-block;
+}
+.badge-cobrando {
+    background-color: #D97706 !important;
+    color: #FFFFFF !important;
+    padding: 3px 8px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 700;
+    display: inline-block;
+    margin: 2px 0;
+}
+.badge-sem-km {
+    background-color: #E2E8F0 !important;
+    color: #475569 !important;
+    padding: 2px 7px;
+    border-radius: 6px;
+    font-size: 11.5px;
+    font-weight: 600;
+    display: inline-block;
+}
+.btn-maps {
+    background-color: #2563EB !important;
+    color: #FFFFFF !important;
+    padding: 6px 11px;
+    border-radius: 5px;
+    text-decoration: none !important;
+    font-weight: 600;
+    font-size: 12px;
+    display: inline-block;
+    margin: 2px;
+}
+.btn-maps:hover {
+    background-color: #1D4ED8 !important;
+    color: #FFFFFF !important;
+}
+.btn-maps-sec {
+    background-color: #0D9488 !important;
+    color: #FFFFFF !important;
+    padding: 5px 9px;
+    border-radius: 5px;
+    text-decoration: none !important;
+    font-weight: 600;
+    font-size: 11.5px;
+    display: inline-block;
+    margin: 2px;
+}
 </style>
 """, unsafe_allow_html=True)
 
 # Título Principal
-st.markdown('<div class="main-header">🔥 Consigaz — Auditoria de KM e Deslocamento</div>', unsafe_allow_html=True)
-st.markdown('<div class="sub-header">Conferência inteligente de rotas com cruzamento do Relatório Totvs e Google Maps</div>', unsafe_allow_html=True)
+st.markdown('<div class="main-header">🔥 Consigaz — Auditoria de KM por Dia e Rota Completa</div>', unsafe_allow_html=True)
+st.markdown('<div class="sub-header">Soma todos os KMs cobrados no mesmo dia, junta todas as OSs da data e joga todos os endereços no Google Maps</div>', unsafe_allow_html=True)
 
 # Barra Lateral - Configurações
 st.sidebar.header("⚙️ Parâmetros da Auditoria")
@@ -134,7 +192,7 @@ st.sidebar.header("⚙️ Parâmetros da Auditoria")
 lista_labels = list(OPCOES_BASES_FORMATADAS.keys())
 indice_padrao = 0
 for idx, lbl in enumerate(lista_labels):
-    if "MAU" in lbl or "Base 8" in lbl:
+    if "CAN" in lbl or "Base 6" in lbl:
         indice_padrao = idx
         break
 
@@ -166,12 +224,12 @@ raio_franquia = st.sidebar.number_input(
 )
 
 limite_alerta_km = st.sidebar.number_input(
-    "Destacar KM Cobrado acima de (KM):",
-    min_value=50.0,
+    "Destacar Soma de KM do Dia acima de (KM):",
+    min_value=20.0,
     max_value=1000.0,
-    value=150.0,
+    value=100.0,
     step=10.0,
-    help="Valores de KM cobrado iguais ou superiores a este limite serão destacados em amarelo com aviso vermelho."
+    help="Dias cuja soma de KM cobrado atingir este valor (ou que tiverem mais de 1 OS cobrando KM no mesmo dia) serão destacados em amarelo."
 )
 
 senha_planilha = st.sidebar.text_input(
@@ -181,9 +239,6 @@ senha_planilha = st.sidebar.text_input(
     help="Senha padrão de fechamento utilizada para desbloquear os arquivos."
 )
 
-st.sidebar.markdown("---")
-st.sidebar.caption("📌 **Regra de Negócio**: Sem dependência de técnico da OS. Varre todas as abas e agrupa todas as visitas do dia para validar a rota.")
-
 # Área de Upload
 col1, col2 = st.columns(2)
 
@@ -192,20 +247,18 @@ with col1:
     arquivo_fechamento = st.file_uploader(
         "Arraste a planilha enviada pela base (.xlsx)",
         type=["xlsx", "xlsm"],
-        key="upload_fechamento",
-        help="Exemplo: G.IGÁS-MAU-OUT-2026-1-CORTE-RELIGUE.xlsx"
+        key="upload_fechamento"
     )
     if arquivo_fechamento:
         base_detectada = detectar_base_por_texto(arquivo_fechamento.name)
-        st.success(f"Arquivo carregado: **{arquivo_fechamento.name}** (Base detectada: **{base_detectada}**)")
+        st.success(f"Arquivo carregado: **{arquivo_fechamento.name}** (Base sugerida pelo nome: **{base_detectada}**)")
 
 with col2:
     st.subheader("2. Relatório Totvs (ESOS)")
     arquivo_totvs = st.file_uploader(
         "Arraste a planilha de consulta Totvs com as OSs (.xlsx)",
         type=["xlsx", "xlsm"],
-        key="upload_totvs",
-        help="Exemplo: maua (2).xlsx com a aba ESOS0301..."
+        key="upload_totvs"
     )
     if arquivo_totvs:
         st.success(f"Arquivo carregado: **{arquivo_totvs.name}**")
@@ -213,8 +266,8 @@ with col2:
 st.markdown("---")
 
 if arquivo_fechamento and arquivo_totvs:
-    if st.button("🚀 Processar e Auditar Quilometragem", use_container_width=True):
-        with st.spinner("Desbloqueando arquivos, cruzando OSs e calculando rotas..."):
+    if st.button("🚀 Processar Soma de KMs por Dia e Gerar Rotas", use_container_width=True):
+        with st.spinner("Cruzando todas as OSs do fechamento com o Totvs, agrupando por dia e montando rotas..."):
             try:
                 wb_fech = carregar_planilha_segura(arquivo_fechamento, senha=senha_planilha)
                 wb_totvs = carregar_planilha_segura(arquivo_totvs, senha=senha_planilha)
@@ -236,280 +289,384 @@ if arquivo_fechamento and arquivo_totvs:
 # Exibição dos Resultados
 if "resultado_auditoria" in st.session_state:
     res = st.session_state["resultado_auditoria"]
-    linhas = res["resumo"]
-    detalhes = res["detalhes"]
+    por_dia = res.get("por_dia", [])
+    linhas_os = res.get("resumo", [])
 
-    # Abas de visualização (A Tabela Geral é a 1ª aba aberta por padrão)
-    tab_resumo, tab_dossie, tab_detalhes, tab_exportar = st.tabs([
-        "📋 Tabela de Auditoria por OS",
-        "📑 Dossiê Visual da Rota (Estilo Print)",
-        "📍 Detalhamento de Visitas do Dia",
-        "📥 Baixar Relatório em Excel"
+    tab_dia, tab_relatorio_pdf, tab_os, tab_exportar = st.tabs([
+        "📅 1. Soma de KMs por Dia + Todas as OSs do Dia",
+        "📄 2. Relatório de Deslocamento (Estilo PDF Consigaz)",
+        "📋 3. Tabela Individual por OS Cobrada",
+        "📥 4. Baixar Relatório em Excel"
     ])
 
-    with tab_resumo:
-        df_resumo = pd.DataFrame(linhas)
+    # =========================================================================
+    # ABA 1: SOMA DE KMs POR DIA + TODAS AS OSs E ENDEREÇOS DO DIA
+    # =========================================================================
+    with tab_dia:
+        if not por_dia:
+            st.warning("Nenhuma cobrança de KM foi encontrada nas abas desta planilha de fechamento.")
+        else:
+            st.markdown("#### 📅 Resumo Consolidado por Dia (Soma dos KMs Registrados no Dia)")
+            st.caption(
+                "Cada linha abaixo reúne **todas as OSs feitas no mesmo dia** e **soma todos os KMs cobrados naquela data**. "
+                "Clique nos botões azuis para jogar **todos os endereços do dia no Google Maps** e ver se a rota bate com o KM total cobrado no dia."
+            )
 
-        # Filtros
-        col_f1, col_f2, col_f3 = st.columns(3)
-        with col_f1:
-            abas_unicas = ["Todas"] + list(df_resumo["Aba"].unique())
-            aba_filtro = st.selectbox("Filtrar por Aba:", abas_unicas)
-        with col_f2:
-            datas_unicas = ["Todas"] + list(df_resumo["Data"].unique())
-            data_filtro = st.selectbox("Filtrar por Data:", datas_unicas)
-        with col_f3:
-            filtro_alerta = st.checkbox(f"Mostrar apenas KM alto (≥ {limite_alerta_km:.0f} km)", value=False)
+            html_dias = [
+                '<table class="table-km">',
+                '<thead><tr>',
+                '<th>Data do Dia</th>',
+                '<th>OSs que Estão Cobrando KM no Dia (Valor por OS)</th>',
+                '<th>SOMA DE KM DITO NO DIA</th>',
+                '<th>Total de OSs no Mesmo Dia</th>',
+                '<th>Cidades Visitadas no Dia</th>',
+                '<th>Jogar Todos os Endereços do Dia no Google Maps</th>',
+                '</tr></thead><tbody>'
+            ]
 
-        df_filtrado = df_resumo.copy()
-        if aba_filtro != "Todas":
-            df_filtrado = df_filtrado[df_filtrado["Aba"] == aba_filtro]
-        if data_filtro != "Todas":
-            df_filtrado = df_filtrado[df_filtrado["Data"] == data_filtro]
-        if filtro_alerta:
-            df_filtrado = df_filtrado[df_filtrado["KM Cobrado"] >= limite_alerta_km]
+            for d in por_dia:
+                soma_km = float(d["Soma KM Cobrado no Dia"])
+                qtd_cobrando = int(d["Qtd OSs Cobrando"])
+                qtd_total_dia = int(d["Qtd Total OSs no Dia"])
+                qtd_enderecos = int(d["Qtd Endereços Distintos"])
 
-        st.caption(f"Exibindo **{len(df_filtrado)}** registros auditados. Linhas com **KM Cobrado ≥ {limite_alerta_km:.0f} km** estão destacadas em amarelo.")
+                # Destaca se a soma do dia for alta OU se tiver mais de 1 OS cobrando KM no mesmo dia
+                is_alert = (soma_km >= float(limite_alerta_km)) or (qtd_cobrando > 1)
+                row_cls = ' class="row-highlight"' if is_alert else ''
 
-        # Renderização HTML da Tabela com visual claro e destaque para KMs altos
-        html_tabela = f"""
-        <table class="table-km">
-            <thead>
-                <tr>
-                    <th>Aba</th>
-                    <th>OS Cobrada</th>
-                    <th>Data</th>
-                    <th>KM Cobrado</th>
-                    <th>KM Faturável (Pós-{raio_franquia:.0f}km)</th>
-                    <th>Qtd OSs no Dia</th>
-                    <th>Rota no Google Maps</th>
-                    <th>Endereço / Cidade</th>
-                </tr>
-            </thead>
-            <tbody>
-        """
-        for _, r in df_filtrado.iterrows():
-            km_val = float(r["KM Cobrado"])
-            is_high = km_val >= float(limite_alerta_km)
-            row_class = ' class="row-highlight"' if is_high else ''
-            
-            badge_html = f'<span class="badge-alto">⚠️ {km_val:,.1f} km</span>' if is_high else f'<span class="badge-normal">{km_val:,.1f} km</span>'
-            
-            link_maps = r["Link Maps (Geral do Dia)"] or r["Link Maps (Técnico)"]
-            if link_maps:
-                btn_link = f'<a href="{link_maps}" target="_blank" class="btn-maps">🗺️ Abrir Rota Maps</a>'
-            else:
-                btn_link = '<span style="color: #999;">-</span>'
+                # Badges das OSs cobrando KM naquele dia
+                chips_cobrando = []
+                for o_cob in d["Lista OSs Cobrando"]:
+                    chips_cobrando.append(
+                        f'<span class="badge-cobrando">💰 OS {o_cob["os"]}: {o_cob["km_cobrado"]:,.1f} km ({o_cob["cidade"]} - {o_cob["aba"]})</span>'
+                    )
+                html_oss_cobrando = "<br>".join(chips_cobrando)
 
-            html_tabela += f"""
-                <tr{row_class}>
-                    <td style="text-align: center; font-weight: 600;">{r['Aba']}</td>
-                    <td style="text-align: center; font-weight: 700; font-size: 14px;">{r['OS Cobrada']}</td>
-                    <td style="text-align: center;">{r['Data']}</td>
-                    <td style="text-align: center;">{badge_html}</td>
-                    <td style="text-align: center; font-weight: 600;">{r['KM Faturável Cobrado']:,.1f} km</td>
-                    <td style="text-align: center; font-weight: 700;">{r['Qtd OS Total Dia']}</td>
-                    <td style="text-align: center;">{btn_link}</td>
-                    <td>{r['Endereço OS']}</td>
-                </tr>
-            """
-        html_tabela += """
-            </tbody>
-        </table>
-        """
-        st.markdown(html_tabela, unsafe_allow_html=True)
-        st.caption("💡 Clique em **🗺️ Abrir Rota Maps** para abrir o trajeto direto no Google Maps traçado na tela.")
+                if is_alert:
+                    alerta_multi = f"<br><small style='color:#B91C1C;font-weight:700;'>⚡ {qtd_cobrando} OSs cobrando no mesmo dia!</small>" if qtd_cobrando > 1 else ""
+                    badge_soma = f'<span class="badge-alto">⚠️ {soma_km:,.1f} km</span>{alerta_multi}'
+                else:
+                    badge_soma = f'<span class="badge-normal">{soma_km:,.1f} km</span>'
 
-    with tab_dossie:
+                # Botões para abrir todos os trechos do dia no Google Maps
+                todos_trechos = d["Trechos Maps"].get("todos_trechos", [])
+                botoes_maps = []
+                if len(todos_trechos) <= 1:
+                    url_u = d["Link Maps (Todas do Dia)"]
+                    botoes_maps.append(f'<a href="{url_u}" target="_blank" class="btn-maps">🗺️ Abrir Rota Completa ({qtd_enderecos} endereços)</a>')
+                else:
+                    for idx_t, tr in enumerate(todos_trechos, start=1):
+                        botoes_maps.append(f'<a href="{tr["url"]}" target="_blank" class="btn-maps">🗺️ Abrir Trecho {idx_t} ({tr["qtd_paradas"]} paradas)</a>')
+
+                if qtd_total_dia > qtd_cobrando:
+                    url_so_km = d["Link Maps (Só OSs com KM)"]
+                    botoes_maps.append(f'<br><a href="{url_so_km}" target="_blank" class="btn-maps-sec">🎯 Rota Só OSs Cobradas ({qtd_cobrando})</a>')
+
+                html_dias.append(
+                    f'<tr{row_cls}>'
+                    f'<td style="text-align:center;font-weight:800;font-size:14.5px;">{d["Data"]}</td>'
+                    f'<td style="text-align:left;">{html_oss_cobrando}</td>'
+                    f'<td style="text-align:center;">{badge_soma}</td>'
+                    f'<td style="text-align:center;font-weight:700;">{qtd_total_dia} OSs no dia<br><small style="color:#475569;">({qtd_cobrando} c/ KM e {qtd_total_dia - qtd_cobrando} s/ KM)</small></td>'
+                    f'<td style="text-align:left;font-weight:600;">{d["Cidades do Dia"]}</td>'
+                    f'<td style="text-align:center;">{"".join(botoes_maps)}</td>'
+                    f'</tr>'
+                )
+
+            html_dias.append('</tbody></table>')
+            st.markdown("\n".join(html_dias), unsafe_allow_html=True)
+
+            st.markdown("---")
+            st.markdown("#### 🔍 Conferir Todas as OSs, Endereços e Quilometragem de um Dia Específico")
+
+            opcoes_dias_det = [
+                f"{d['Data']} — Soma Cobrada: {d['Soma KM Cobrado no Dia']:,.1f} km ({d['Qtd OSs Cobrando']} OS cobrando de {d['Qtd Total OSs no Dia']} OSs no dia)"
+                for d in por_dia
+            ]
+            idx_dia_sel = st.selectbox(
+                "Escolha o Dia abaixo para ver todas as OSs do dia juntas, os endereços enviados ao Google Maps e simular a soma:",
+                options=range(len(opcoes_dias_det)),
+                format_func=lambda i: opcoes_dias_det[i],
+                index=0
+            )
+
+            dia_atual = por_dia[idx_dia_sel]
+            trechos_atuais = dia_atual["Trechos Maps"].get("todos_trechos", [])
+
+            # Calculadora rápida de confronto: Soma Cobrada no Dia vs Google Maps
+            c_calc1, c_calc2 = st.columns([1.2, 1.8])
+            with c_calc1:
+                st.markdown(f"**🗺️ Links do Google Maps para o dia {dia_atual['Data']}**")
+                st.caption(f"Partida e Retorno: `{res['base_endereco']}`")
+                soma_maps_dia = 0.0
+                for idx_t, tr in enumerate(trechos_atuais, start=1):
+                    st.link_button(
+                        f"🌐 Abrir {tr['nome']} no Google Maps",
+                        tr["url"],
+                        use_container_width=True
+                    )
+                    val_default = float(dia_atual["Soma KM Cobrado no Dia"] / len(trechos_atuais))
+                    km_digitado = st.number_input(
+                        f"KM que deu no Google Maps (Trecho {idx_t}):",
+                        min_value=0.0,
+                        max_value=3000.0,
+                        value=val_default,
+                        step=1.0,
+                        key=f"calc_km_dia_{dia_atual['chave_dia']}_{idx_t}"
+                    )
+                    soma_maps_dia += km_digitado
+
+            with c_calc2:
+                soma_cobrada = float(dia_atual["Soma KM Cobrado no Dia"])
+                dif_km = soma_maps_dia - soma_cobrada
+                if soma_maps_dia >= soma_cobrada:
+                    box_veredito = (
+                        '<div style="background-color:#ECFDF5;border:2px solid #10B981;border-radius:8px;padding:18px;margin-top:8px;">'
+                        f'<h4 style="color:#065F46 !important;margin:0 0 8px 0;">✅ A SOMA DO GOOGLE MAPS BATEU COM O KM COBRADO NO DIA ({dia_atual["Data"]})</h4>'
+                        f'<p style="margin:0;color:#064E3B !important;font-size:14.5px;line-height:1.5;">'
+                        f'• <b>Soma dos KMs cobrados pelas OSs no dia:</b> {soma_cobrada:,.1f} km ({dia_atual["OSs Cobrando KM"]})<br>'
+                        f'• <b>KM Total da Rota no Google Maps (com todas as {dia_atual["Qtd Total OSs no Dia"]} OSs do dia):</b> {soma_maps_dia:,.1f} km<br>'
+                        f'• <b>Conclusão:</b> O trajeto completo do dia no Google Maps ({soma_maps_dia:,.1f} km) cobre os {soma_cobrada:,.1f} km cobrados.'
+                        '</p></div>'
+                    )
+                else:
+                    box_veredito = (
+                        '<div style="background-color:#FEF2F2;border:2px solid #EF4444;border-radius:8px;padding:18px;margin-top:8px;">'
+                        f'<h4 style="color:#991B1B !important;margin:0 0 8px 0;">🚨 A ROTA NÃO BATE! COBRANÇA MAIOR QUE O GOOGLE MAPS ({dia_atual["Data"]})</h4>'
+                        f'<p style="margin:0;color:#7F1D1D !important;font-size:14.5px;line-height:1.5;">'
+                        f'• <b>Soma dos KMs cobrados pelas OSs no dia:</b> <b>{soma_cobrada:,.1f} km</b> ({dia_atual["OSs Cobrando KM"]})<br>'
+                        f'• <b>KM Total no Google Maps (juntando todas as {dia_atual["Qtd Total OSs no Dia"]} OSs do dia):</b> <b>{soma_maps_dia:,.1f} km</b><br>'
+                        f'• <b>Diferença Cobrada a Maior (Glosa sugerida):</b> <span style="background:#DC2626;color:#FFF;padding:2px 8px;border-radius:4px;font-weight:800;">{abs(dif_km):,.1f} km a mais sem justificativa</span>'
+                        '</p></div>'
+                    )
+                st.markdown(box_veredito, unsafe_allow_html=True)
+
+                # Resumo rápido da ordem dos endereços enviados ao Google Maps
+                paradas_html = [
+                    '<div style="background-color:#F8FAFC;border:1px solid #CBD5E1;border-radius:8px;padding:12px 16px;margin-top:12px;">',
+                    f'<div style="font-weight:700;color:#1F4E79;margin-bottom:6px;">📍 Sequência de Endereços no Google Maps ({len(dia_atual["Paradas Google Maps"])} paradas entre Partida e Retorno):</div>',
+                    f'<div style="font-size:13px;color:#1E293B;margin-bottom:4px;">🟢 <b>Partida (Base):</b> {res["base_endereco"]}</div>'
+                ]
+                for p in dia_atual["Paradas Google Maps"]:
+                    oss_p_txt = ", ".join(
+                        f"<b>OS {x['os']} (💰 {x['km_cobrado']:,.1f} km)</b>" if x["km_cobrado"] > 0 else f"OS {x['os']}"
+                        for x in p["oss"]
+                    )
+                    icone_p = "🟠" if p["tem_cobranca"] else "⚪"
+                    paradas_html.append(
+                        f'<div style="font-size:13px;color:#1E293B;margin-bottom:4px;">'
+                        f'{icone_p} <b>Parada {p["ordem"]}:</b> {p["endereco"]} — <span style="color:#0F172A;">[{oss_p_txt}]</span>'
+                        f'</div>'
+                    )
+                paradas_html.append(f'<div style="font-size:13px;color:#1E293B;margin-top:4px;">🔴 <b>Retorno (Base):</b> {res["base_endereco"]}</div>')
+                paradas_html.append('</div>')
+                st.markdown("\n".join(paradas_html), unsafe_allow_html=True)
+
+            # Tabela com TODAS as OSs daquele dia juntas (mostrando quem está cobrando KM e quem tem 0 km)
+            st.markdown(f"##### 📋 Todas as {dia_atual['Qtd Total OSs no Dia']} OSs do Dia {dia_atual['Data']} (Com Endereços e Soma de KM)")
+            html_oss_dia = [
+                '<table class="table-km">',
+                '<thead><tr>',
+                '<th>Aba da Planilha</th>',
+                '<th>Ordem de Serviço</th>',
+                '<th>Status KM</th>',
+                '<th>KM Registrado na OS</th>',
+                '<th>Cód. Cliente</th>',
+                '<th>Cidade</th>',
+                '<th>Endereço Completo (Enviado ao Google Maps)</th>',
+                '<th>Serviço Prestado</th>',
+                '</tr></thead><tbody>'
+            ]
+
+            for o_item in dia_atual["Todas as OSs do Dia"]:
+                cob = o_item["km_cobrado"] > 0
+                r_cls = ' class="row-highlight"' if cob else ''
+                badge_st = f'<span class="badge-cobrando">💰 COBRANDO KM</span>' if cob else '<span class="badge-sem-km">Mesmo Dia (0 km)</span>'
+                km_txt = f'<b>{o_item["km_cobrado"]:,.1f} km</b>' if cob else '0,0 km'
+
+                html_oss_dia.append(
+                    f'<tr{r_cls}>'
+                    f'<td style="text-align:center;font-weight:600;">{o_item["aba"]}</td>'
+                    f'<td style="text-align:center;font-weight:800;font-size:14px;">{o_item["os"]}</td>'
+                    f'<td style="text-align:center;">{badge_st}</td>'
+                    f'<td style="text-align:center;font-size:14px;">{km_txt}</td>'
+                    f'<td style="text-align:center;">{o_item["cod_cliente"]}</td>'
+                    f'<td style="text-align:center;font-weight:600;">{o_item["cidade"]}</td>'
+                    f'<td style="text-align:left;font-weight:600;">{o_item["endereco_limpo"]}</td>'
+                    f'<td style="text-align:left;">{o_item["servico"]}</td>'
+                    f'</tr>'
+                )
+
+            html_oss_dia.append(
+                '<tr class="row-total">'
+                f'<td colspan="3" style="text-align:right;">SOMA TOTAL DE KM REGISTRADO NO DIA ({dia_atual["Data"]}):</td>'
+                f'<td style="text-align:center;">{dia_atual["Soma KM Cobrado no Dia"]:,.1f} km</td>'
+                f'<td colspan="4" style="text-align:left;">Total de {dia_atual["Qtd Total OSs no Dia"]} OSs no dia ({dia_atual["Qtd OSs Cobrando"]} OSs cobrando KM)</td>'
+                '</tr>'
+            )
+            html_oss_dia.append('</tbody></table>')
+            st.markdown("\n".join(html_oss_dia), unsafe_allow_html=True)
+
+    # =========================================================================
+    # ABA 2: RELATÓRIO DE DESLOCAMENTO (ESTILO PDF CONSIGAZ PRONTO PARA PRINT)
+    # =========================================================================
+    with tab_relatorio_pdf:
         dossies = res.get("dossies", {})
         if not dossies:
-            st.warning("Nenhum dia com cobrança de KM localizado no fechamento.")
+            st.warning("Nenhum dia com cobrança de KM localizado.")
         else:
             lista_opcoes = list(dossies.keys())
             opcao_sel = st.selectbox(
-                "Selecione o Dia / OS para gerar o Dossiê Visual:",
+                "Selecione o Dia para gerar a folha de Relatório de Deslocamento (modelo PDF Consigaz):",
                 options=lista_opcoes,
-                index=0,
-                help="Escolha o dia para visualizar a folha de conferência formatada."
+                index=0
             )
-
             dossie = dossies[opcao_sel]
-            trechos = dossie["trechos"]
-            t1 = trechos["trecho1"]
-            t2 = trechos.get("trecho2")
+            trechos_d = dossie["Trechos Maps"].get("todos_trechos", [])
 
-            st.markdown("---")
-            st.markdown("#### 🗺️ Conferência dos Trechos no Google Maps")
-
-            c_tr1, c_tr2 = st.columns(2)
-            with c_tr1:
-                st.markdown(f"**{t1['nome']}**")
-                st.link_button(
-                    "🌐 Abrir Trecho 1 no Google Maps",
-                    t1["url"],
-                    use_container_width=True
-                )
-                km_t1 = st.number_input(
-                    "KM Apurado no Maps (Trecho 1):",
+            c_up1, c_up2 = st.columns(2)
+            with c_up1:
+                km_maps_folha = st.number_input(
+                    "KM Apurado no Google Maps para exibir na folha:",
                     min_value=0.0,
-                    max_value=1500.0,
-                    value=float(dossie["km_cobrado"] if not t2 else dossie["km_cobrado"] / 2),
+                    max_value=3000.0,
+                    value=float(dossie["Soma KM Cobrado no Dia"]),
                     step=1.0,
-                    key=f"km_t1_{opcao_sel}"
+                    key=f"km_folha_{dossie['chave_dia']}"
                 )
-                img_t1 = st.file_uploader(
-                    "Anexar print do Trecho 1 (Opcional):",
+            with c_up2:
+                prints_maps = st.file_uploader(
+                    "Anexar Print(s) do Google Maps na folha (Opcional):",
                     type=["png", "jpg", "jpeg"],
-                    key=f"img_t1_{opcao_sel}"
+                    accept_multiple_files=True,
+                    key=f"prints_{dossie['chave_dia']}"
                 )
 
-            with c_tr2:
-                if t2:
-                    st.markdown(f"**{t2['nome']}**")
-                    st.link_button(
-                        "🌐 Abrir Trecho 2 no Google Maps",
-                        t2["url"],
-                        use_container_width=True
-                    )
-                    km_t2 = st.number_input(
-                        "KM Apurado no Maps (Trecho 2):",
-                        min_value=0.0,
-                        max_value=1500.0,
-                        value=float(dossie["km_cobrado"] / 2),
-                        step=1.0,
-                        key=f"km_t2_{opcao_sel}"
-                    )
-                    img_t2 = st.file_uploader(
-                        "Anexar print do Trecho 2 (Opcional):",
-                        type=["png", "jpg", "jpeg"],
-                        key=f"img_t2_{opcao_sel}"
-                    )
-                else:
-                    km_t2 = 0.0
-                    img_t2 = None
-                    st.info("ℹ️ Este percurso possui 8 ou menos paradas e coube inteiramente em 1 único trecho.")
+            folha_pdf_html = [
+                '<div style="background-color:#FFFFFF;border:2px solid #000000;padding:20px;margin-top:10px;margin-bottom:20px;font-family:Calibri,Arial,sans-serif;color:#000000;">',
+                '<table style="width:100%;border-collapse:collapse;margin-bottom:12px;border:1.5px solid #000;">',
+                '<tr>',
+                '<td style="width:55%;padding:12px;border:1.5px solid #000;vertical-align:middle;">',
+                '<span style="font-size:24px;font-weight:900;color:#004B87;letter-spacing:1px;">🔥 CONSIGAZ</span> &nbsp;&nbsp;',
+                '<span style="font-size:22px;font-weight:900;color:#B91C1C;">GASBALL</span> &nbsp;&nbsp;',
+                '<span style="font-size:22px;font-weight:900;color:#15803D;">PROPANGÁS</span>',
+                '</td>',
+                '<td style="width:45%;padding:12px;border:1.5px solid #000;text-align:center;vertical-align:middle;">',
+                '<div style="font-size:24px;font-weight:900;color:#DC2626;line-height:1.1;">RELATÓRIO DE DESLOCAMENTO</div>',
+                f'<div style="font-size:15px;font-weight:800;color:#000000;margin-top:4px;">DATA DO DIA: {dossie["Data"]}</div>',
+                '</td>',
+                '</tr>',
+                '</table>',
+                '<table style="width:100%;border-collapse:collapse;font-size:13px;color:#000000;border:1.5px solid #000;">',
+                '<thead><tr style="background-color:#F1F5F9;font-weight:800;text-align:center;">',
+                '<th style="border:1px solid #000;padding:6px;color:#000;">ABA PLANILHA:</th>',
+                '<th style="border:1px solid #000;padding:6px;color:#000;">ORDEM DE SERVIÇO:</th>',
+                '<th style="border:1px solid #000;padding:6px;color:#000;">CÓDIGO CLIENTE:</th>',
+                '<th style="border:1px solid #000;padding:6px;color:#000;">CIDADE:</th>',
+                '<th style="border:1px solid #000;padding:6px;color:#000;">ENDEREÇO (GOOGLE MAPS):</th>',
+                '<th style="border:1px solid #000;padding:6px;color:#000;">KM TOTAL:</th>',
+                '<th style="border:1px solid #000;padding:6px;color:#000;">PEDÁGIO:</th>',
+                '<th style="border:1px solid #000;padding:6px;color:#000;">SERVIÇO PRESTADO:</th>',
+                '</tr></thead><tbody>'
+            ]
 
-            total_km_apurado = km_t1 + km_t2
+            for o_row in dossie["Todas as OSs do Dia"]:
+                tem_km = o_row["km_cobrado"] > 0
+                bg_row = 'background-color:#FEF3C7;font-weight:700;' if tem_km else 'background-color:#FFFFFF;'
+                km_cell = f'{o_row["km_cobrado"]:,.1f} km' if tem_km else ''
+                ped_cell = f'{o_row["pedagio"]:,.2f}' if o_row["pedagio"] > 0 else ''
+                folha_pdf_html.append(
+                    f'<tr style="{bg_row}text-align:center;">'
+                    f'<td style="border:1px solid #000;padding:5px;color:#000;">{o_row["aba"]}</td>'
+                    f'<td style="border:1px solid #000;padding:5px;color:#000;font-weight:800;">{o_row["os"]}</td>'
+                    f'<td style="border:1px solid #000;padding:5px;color:#000;">{o_row["cod_cliente"]}</td>'
+                    f'<td style="border:1px solid #000;padding:5px;color:#000;">{o_row["cidade"]}</td>'
+                    f'<td style="border:1px solid #000;padding:5px;color:#000;text-align:left;">{o_row["endereco_limpo"]}</td>'
+                    f'<td style="border:1px solid #000;padding:5px;color:#000;font-weight:800;">{km_cell}</td>'
+                    f'<td style="border:1px solid #000;padding:5px;color:#000;">{ped_cell}</td>'
+                    f'<td style="border:1px solid #000;padding:5px;color:#000;text-align:left;">{o_row["servico"]}</td>'
+                    '</tr>'
+                )
 
-            st.markdown("<br>", unsafe_allow_html=True)
-            st.markdown("### 📸 Folha de Conferência da Rota (Pronta para Print)")
-            st.caption("Você pode tirar print diretamente desta folha abaixo para arquivar ou anexar no fechamento.")
-
-            st.markdown("""
-            <div style="background-color: white; border: 2px solid #1F4E79; border-radius: 8px; padding: 25px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); margin-bottom: 25px;">
-                <h2 style="text-align: center; color: black; font-weight: 900; letter-spacing: 2px; margin-bottom: 2px;">ROTA DE KM</h2>
-                <h4 style="text-align: center; color: #333; margin-top: 0px; font-weight: 600; margin-bottom: 20px;">""" + dossie['data_formatada'] + """</h4>
-            """, unsafe_allow_html=True)
-
-            df_folha = pd.DataFrame(dossie["tabela_oss"])[["Ordem Serviço", "Cliente", "Cidade", "Data", "Serviço"]]
-            
-            html_tabela_folha = """
-            <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px; font-family: Calibri, Arial, sans-serif; font-size: 13px; color: black;">
-                <thead>
-                    <tr style="background-color: #F2F4F7; border: 1.5px solid #000; text-align: center; font-weight: bold;">
-                        <th style="border: 1.5px solid #000; padding: 8px;">Ordem Serviço</th>
-                        <th style="border: 1.5px solid #000; padding: 8px;">Cliente</th>
-                        <th style="border: 1.5px solid #000; padding: 8px;">Cidade</th>
-                        <th style="border: 1.5px solid #000; padding: 8px;">Data</th>
-                        <th style="border: 1.5px solid #000; padding: 8px;">Serviço</th>
-                    </tr>
-                </thead>
-                <tbody>
-            """
-            for _, row in df_folha.iterrows():
-                html_tabela_folha += f"""
-                    <tr style="border: 1px solid #444; text-align: center;">
-                        <td style="border: 1px solid #444; padding: 6px; font-weight: bold;">{row['Ordem Serviço']}</td>
-                        <td style="border: 1px solid #444; padding: 6px; text-align: left;">{row['Cliente']}</td>
-                        <td style="border: 1px solid #444; padding: 6px;">{row['Cidade']}</td>
-                        <td style="border: 1px solid #444; padding: 6px;">{row['Data']}</td>
-                        <td style="border: 1px solid #444; padding: 6px;">{row['Serviço']}</td>
-                    </tr>
-                """
-            html_tabela_folha += """
-                </tbody>
-            </table>
-            """
-            st.markdown(html_tabela_folha, unsafe_allow_html=True)
-
-            st.markdown(f"""
-            <div style="text-align: center; font-size: 26px; font-weight: 900; color: black; margin-top: 15px; margin-bottom: 25px; letter-spacing: 1px;">
-                TOTAL DE {total_km_apurado:,.0f} KM
-            </div>
-            """, unsafe_allow_html=True)
-
-            if img_t1:
-                st.image(img_t1, caption=f"Trecho 1 — {km_t1:,.0f} km", use_container_width=True)
-            if img_t2:
-                st.image(img_t2, caption=f"Trecho 2 — {km_t2:,.0f} km", use_container_width=True)
-
-            km_cobrado = dossie["km_cobrado"]
-            franquia = dossie["raio_franquia"]
-            km_fat_cobrado = dossie["km_faturavel"]
-            diferenca = total_km_apurado - km_cobrado
-
-            if total_km_apurado >= km_cobrado:
-                status_box = f"""
-                <div style="background-color: #E8F5E9; border: 2px solid #4CAF50; border-radius: 6px; padding: 15px; margin-top: 20px;">
-                    <h4 style="color: #2E7D32; margin: 0 0 5px 0;">✅ ROTA VALIDADA NO GOOGLE MAPS</h4>
-                    <p style="margin: 0; color: #1B5E20; font-size: 14px;">
-                        A rota apurada no Google Maps (<b>{total_km_apurado:,.1f} km</b>) cobre a quilometragem afirmada na planilha da base (<b>{km_cobrado:,.1f} km</b>).<br>
-                        <b>KM Faturável Aprovado:</b> {max(0.0, total_km_apurado - franquia):,.1f} km (com franquia deduzida de {franquia:.0f} km).
-                    </p>
-                </div>
-                """
-            else:
-                status_box = f"""
-                <div style="background-color: #FFEBEE; border: 2px solid #E53935; border-radius: 6px; padding: 15px; margin-top: 20px;">
-                    <h4 style="color: #C62828; margin: 0 0 5px 0;">⚠️ DIVERGÊNCIA IDENTIFICADA</h4>
-                    <p style="margin: 0; color: #B71C1C; font-size: 14px;">
-                        A rota no Google Maps somou apenas <b>{total_km_apurado:,.1f} km</b>, ficando <b>{abs(diferenca):,.1f} km abaixo</b> da quilometragem afirmada pela base (<b>{km_cobrado:,.1f} km</b>).<br>
-                        <b>KM Faturável Real do Maps:</b> {max(0.0, total_km_apurado - franquia):,.1f} km vs <b>Cobrado:</b> {km_fat_cobrado:,.1f} km.
-                    </p>
-                </div>
-                """
-            st.markdown(status_box, unsafe_allow_html=True)
-            st.markdown("</div>", unsafe_allow_html=True)
-
-    with tab_detalhes:
-        st.markdown("#### Lista Completa de Atendimentos por Dia")
-        if detalhes:
-            df_det = pd.DataFrame(detalhes)
-            oss_cobradas = list(df_det["OS Âncora Fechamento"].unique())
-            os_sel = st.selectbox("Selecione a OS Âncora do Fechamento:", oss_cobradas)
-            
-            df_det_filtrado = df_det[df_det["OS Âncora Fechamento"] == os_sel]
-            
-            st.dataframe(
-                df_det_filtrado[[
-                    "Ordem", "OS Atendida", "Hora",
-                    "Cliente", "Endereço Limpo", "Bairro", "Cidade", "Situação"
-                ]],
-                column_config={
-                    "OS Atendida": st.column_config.NumberColumn(format="%d"),
-                    "Ordem": st.column_config.NumberColumn(format="%dº"),
-                },
-                hide_index=True,
-                use_container_width=True
+            folha_pdf_html.append(
+                '<tr style="background-color:#E2E8F0;font-weight:900;text-align:center;">'
+                f'<td colspan="5" style="border:1.5px solid #000;padding:7px;text-align:right;color:#000;">SOMA DOS KMs REGISTRADOS NO DIA ({dossie["Data"]}):</td>'
+                f'<td style="border:1.5px solid #000;padding:7px;color:#B91C1C;font-size:15px;">{dossie["Soma KM Cobrado no Dia"]:,.1f} km</td>'
+                f'<td style="border:1.5px solid #000;padding:7px;color:#000;">{dossie["Soma Pedágio no Dia"]:,.2f}</td>'
+                f'<td style="border:1.5px solid #000;padding:7px;text-align:left;color:#000;"> KM Apurado Google Maps: <b>{km_maps_folha:,.1f} km</b></td>'
+                '</tr>'
             )
-        else:
-            st.info("Nenhum detalhe disponível.")
+            folha_pdf_html.append('</tbody></table>')
+            folha_pdf_html.append('</div>')
+            st.markdown("\n".join(folha_pdf_html), unsafe_allow_html=True)
 
+            if prints_maps:
+                for p_img in prints_maps:
+                    st.image(p_img, use_container_width=True)
+
+    # =========================================================================
+    # ABA 3: TABELA INDIVIDUAL POR OS COBRADA
+    # =========================================================================
+    with tab_os:
+        df_resumo = pd.DataFrame(linhas_os)
+        st.caption("Lista individual de cada linha onde foi lançado KM > 0, mostrando ao lado a **Soma Total de KM daquele mesmo dia**.")
+        linhas_html = [
+            '<table class="table-km">',
+            '<thead><tr>',
+            '<th>Aba</th>',
+            '<th>OS Cobrada</th>',
+            '<th>Data</th>',
+            '<th>KM Registrado na OS</th>',
+            '<th>SOMA DE KM NO MESMO DIA</th>',
+            '<th>Total de OSs no Dia</th>',
+            '<th>Cidade</th>',
+            '<th>Endereço Limpo (Google Maps)</th>',
+            '<th>Rota Completa do Dia</th>',
+            '</tr></thead><tbody>'
+        ]
+        for _, r in df_resumo.iterrows():
+            km_val = float(r["KM Cobrado"])
+            soma_d = float(r["Soma KM do Dia"])
+            is_high = soma_d >= float(limite_alerta_km) or km_val >= float(limite_alerta_km)
+            row_class = ' class="row-highlight"' if is_high else ''
+            badge_os = f'<span class="badge-cobrando">{km_val:,.1f} km</span>'
+            badge_dia = f'<span class="badge-alto">⚠️ {soma_d:,.1f} km</span>' if is_high else f'<span class="badge-normal">{soma_d:,.1f} km</span>'
+            link_maps = r["Link Maps (Geral do Dia)"]
+            btn_link = f'<a href="{link_maps}" target="_blank" class="btn-maps">🗺️ Abrir Rota do Dia</a>' if link_maps else '-'
+
+            linhas_html.append(
+                f'<tr{row_class}>'
+                f'<td style="text-align:center;font-weight:600;">{r["Aba"]}</td>'
+                f'<td style="text-align:center;font-weight:800;font-size:14px;">{r["OS Cobrada"]}</td>'
+                f'<td style="text-align:center;font-weight:700;">{r["Data"]}</td>'
+                f'<td style="text-align:center;">{badge_os}</td>'
+                f'<td style="text-align:center;">{badge_dia}</td>'
+                f'<td style="text-align:center;font-weight:700;">{r["Qtd OS Total Dia"]} OSs</td>'
+                f'<td style="text-align:center;font-weight:600;">{r["Cidade"]}</td>'
+                f'<td>{r["Endereço OS"]}</td>'
+                f'<td style="text-align:center;">{btn_link}</td>'
+                f'</tr>'
+            )
+        linhas_html.append('</tbody></table>')
+        st.markdown("\n".join(linhas_html), unsafe_allow_html=True)
+
+    # =========================================================================
+    # ABA 4: EXPORTAR EXCEL
+    # =========================================================================
     with tab_exportar:
-        st.markdown("#### Exportar Relatório Oficial com Links Hipertexto")
-        st.write("Baixe a planilha Excel contendo o resumo com fórmulas `=HYPERLINK` clicáveis e a aba detalhada com cada cliente visitado.")
+        st.markdown("#### 📥 Baixar Relatório Consolidado por Dia em Excel")
+        st.write("A planilha gerada contém a aba **Soma de KM por Dia** (com os links diretos do Google Maps) e a aba **Relatorio Deslocamento Dia** com todas as OSs do mesmo dia agrupadas e os endereços completos.")
 
         buffer = io.BytesIO()
         exportar_relatorio_excel(res, buffer)
         buffer.seek(0)
 
-        nome_arquivo_excel = f"Auditoria_KM_{st.session_state.get('nome_fechamento', 'Consigaz')}.xlsx"
-        
+        nome_arquivo_excel = f"Auditoria_KM_Por_Dia_{st.session_state.get('nome_fechamento', 'Consigaz')}.xlsx"
         st.download_button(
-            label="📥 Baixar Planilha de Auditoria (.xlsx)",
+            label="📥 Baixar Planilha de Auditoria por Dia (.xlsx)",
             data=buffer,
             file_name=nome_arquivo_excel,
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
 else:
-    st.info("👆 Por favor, carregue a **Planilha de Fechamento** e a **Planilha Totvs** nos campos acima e clique em **Processar e Auditar Quilometragem**.")
+    st.info("👆 Arraste a **Planilha de Fechamento** e o **Relatório Totvs** nos campos acima e clique em **Processar Soma de KMs por Dia e Gerar Rotas**.")

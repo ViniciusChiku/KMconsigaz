@@ -1,0 +1,6 @@
+__pycache__/
+*.xlsx
+*.xlsm
+*.log
+log_execucao.txt
+Teste_Auditoria_KM.xlsx
