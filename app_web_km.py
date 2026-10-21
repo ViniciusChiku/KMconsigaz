@@ -22,36 +22,27 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS para identidade visual limpa e profissional
+# Custom CSS forçando Tema Claro e estilos da tabela com destaque
 st.markdown("""
 <style>
+    /* Força fundo claro */
+    .stApp {
+        background-color: #FFFFFF !important;
+        color: #212529 !important;
+    }
+    header, [data-testid="stHeader"] {
+        background-color: #FFFFFF !important;
+    }
     .main-header {
         font-size: 26px;
-        font-weight: 700;
+        font-weight: 800;
         color: #1F4E79;
         margin-bottom: 2px;
     }
     .sub-header {
         font-size: 15px;
-        color: #595959;
+        color: #555555;
         margin-bottom: 20px;
-    }
-    .card-metric {
-        background-color: #F8F9FA;
-        border: 1px solid #E9ECEF;
-        border-radius: 8px;
-        padding: 15px;
-        text-align: center;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.05);
-    }
-    .metric-value {
-        font-size: 24px;
-        font-weight: 700;
-        color: #1F4E79;
-    }
-    .metric-label {
-        font-size: 13px;
-        color: #6C757D;
     }
     .stButton>button {
         background-color: #1F4E79;
@@ -63,6 +54,72 @@ st.markdown("""
     .stButton>button:hover {
         background-color: #163857;
         color: white;
+    }
+    /* Estilo da tabela personalizada com destaque para KM alto */
+    .table-km {
+        width: 100%;
+        border-collapse: collapse;
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        font-size: 13.5px;
+        margin-top: 10px;
+        margin-bottom: 20px;
+    }
+    .table-km th {
+        background-color: #1F4E79;
+        color: #FFFFFF;
+        text-align: center;
+        padding: 10px 8px;
+        font-weight: 600;
+        border: 1px solid #163857;
+    }
+    .table-km td {
+        padding: 8px 10px;
+        border: 1px solid #E0E0E0;
+        color: #333333;
+        vertical-align: middle;
+    }
+    .table-km tr:nth-child(even) {
+        background-color: #F8F9FA;
+    }
+    .table-km tr:hover {
+        background-color: #EDF2F7;
+    }
+    .row-highlight {
+        background-color: #FFF3CD !important;
+        border-left: 4px solid #D39E00 !important;
+    }
+    .badge-alto {
+        background-color: #DC3545;
+        color: white;
+        padding: 3px 8px;
+        border-radius: 12px;
+        font-size: 11.5px;
+        font-weight: 700;
+        display: inline-block;
+    }
+    .badge-normal {
+        background-color: #28A745;
+        color: white;
+        padding: 3px 8px;
+        border-radius: 12px;
+        font-size: 11.5px;
+        font-weight: 600;
+        display: inline-block;
+    }
+    .btn-maps {
+        background-color: #0D6EFD;
+        color: white !important;
+        padding: 5px 12px;
+        border-radius: 4px;
+        text-decoration: none;
+        font-weight: 600;
+        font-size: 12px;
+        display: inline-block;
+        transition: 0.2s;
+    }
+    .btn-maps:hover {
+        background-color: #0B5ED7;
+        color: white !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -108,6 +165,15 @@ raio_franquia = st.sidebar.number_input(
     help="Quilometragem deduzida do percurso (ex: 20 km raio ida e volta = 40 km)."
 )
 
+limite_alerta_km = st.sidebar.number_input(
+    "Destacar KM Cobrado acima de (KM):",
+    min_value=50.0,
+    max_value=1000.0,
+    value=150.0,
+    step=10.0,
+    help="Valores de KM cobrado iguais ou superiores a este limite serão destacados em amarelo com aviso vermelho."
+)
+
 senha_planilha = st.sidebar.text_input(
     "Senha da Planilha (se houver):",
     value="fechamento",
@@ -116,7 +182,7 @@ senha_planilha = st.sidebar.text_input(
 )
 
 st.sidebar.markdown("---")
-st.sidebar.caption("📌 **Dica**: O sistema percorre todas as abas com OS e KM (Moto, Carro, Engenharia, etc.) e ignora pedágio.")
+st.sidebar.caption("📌 **Regra de Negócio**: Sem dependência de técnico da OS. Varre todas as abas e agrupa todas as visitas do dia para validar a rota.")
 
 # Área de Upload
 col1, col2 = st.columns(2)
@@ -150,13 +216,9 @@ if arquivo_fechamento and arquivo_totvs:
     if st.button("🚀 Processar e Auditar Quilometragem", use_container_width=True):
         with st.spinner("Desbloqueando arquivos, cruzando OSs e calculando rotas..."):
             try:
-                # 1. Carrega fechamento
                 wb_fech = carregar_planilha_segura(arquivo_fechamento, senha=senha_planilha)
-                
-                # 2. Carrega Totvs
                 wb_totvs = carregar_planilha_segura(arquivo_totvs, senha=senha_planilha)
 
-                # 3. Executa auditoria
                 resultado = processar_auditoria_completa(
                     wb_fechamento=wb_fech,
                     wb_totvs=wb_totvs,
@@ -177,47 +239,86 @@ if "resultado_auditoria" in st.session_state:
     linhas = res["resumo"]
     detalhes = res["detalhes"]
 
-    st.markdown("### 📊 Indicadores Consolidados")
-    
-    m1, m2, m3, m4 = st.columns(4)
-    with m1:
-        st.markdown(f"""
-        <div class="card-metric">
-            <div class="metric-value">{res['total_oss_km']}</div>
-            <div class="metric-label">OSs com KM Cobrado</div>
-        </div>
-        """, unsafe_allow_html=True)
-    with m2:
-        st.markdown(f"""
-        <div class="card-metric">
-            <div class="metric-value">{res['total_km_cobrado']:,.1f} km</div>
-            <div class="metric-label">KM Total Cobrado</div>
-        </div>
-        """, unsafe_allow_html=True)
-    with m3:
-        st.markdown(f"""
-        <div class="card-metric">
-            <div class="metric-value">{res['total_km_faturavel']:,.1f} km</div>
-            <div class="metric-label">KM Faturável (Pós-Raio {res['raio_franquia']:.0f}km)</div>
-        </div>
-        """, unsafe_allow_html=True)
-    with m4:
-        st.markdown(f"""
-        <div class="card-metric">
-            <div class="metric-value">{len(res['abas_auditadas'])}</div>
-            <div class="metric-label">Abas de Fechamento Auditadas</div>
-        </div>
-        """, unsafe_allow_html=True)
-
-    st.markdown("<br>", unsafe_allow_html=True)
-
-    # Abas de visualização
-    tab_dossie, tab_resumo, tab_detalhes, tab_exportar = st.tabs([
-        "📑 Dossiê Visual da Rota (Estilo Print)",
+    # Abas de visualização (A Tabela Geral é a 1ª aba aberta por padrão)
+    tab_resumo, tab_dossie, tab_detalhes, tab_exportar = st.tabs([
         "📋 Tabela de Auditoria por OS",
+        "📑 Dossiê Visual da Rota (Estilo Print)",
         "📍 Detalhamento de Visitas do Dia",
         "📥 Baixar Relatório em Excel"
     ])
+
+    with tab_resumo:
+        df_resumo = pd.DataFrame(linhas)
+
+        # Filtros
+        col_f1, col_f2, col_f3 = st.columns(3)
+        with col_f1:
+            abas_unicas = ["Todas"] + list(df_resumo["Aba"].unique())
+            aba_filtro = st.selectbox("Filtrar por Aba:", abas_unicas)
+        with col_f2:
+            datas_unicas = ["Todas"] + list(df_resumo["Data"].unique())
+            data_filtro = st.selectbox("Filtrar por Data:", datas_unicas)
+        with col_f3:
+            filtro_alerta = st.checkbox(f"Mostrar apenas KM alto (≥ {limite_alerta_km:.0f} km)", value=False)
+
+        df_filtrado = df_resumo.copy()
+        if aba_filtro != "Todas":
+            df_filtrado = df_filtrado[df_filtrado["Aba"] == aba_filtro]
+        if data_filtro != "Todas":
+            df_filtrado = df_filtrado[df_filtrado["Data"] == data_filtro]
+        if filtro_alerta:
+            df_filtrado = df_filtrado[df_filtrado["KM Cobrado"] >= limite_alerta_km]
+
+        st.caption(f"Exibindo **{len(df_filtrado)}** registros auditados. Linhas com **KM Cobrado ≥ {limite_alerta_km:.0f} km** estão destacadas em amarelo.")
+
+        # Renderização HTML da Tabela com visual claro e destaque para KMs altos
+        html_tabela = f"""
+        <table class="table-km">
+            <thead>
+                <tr>
+                    <th>Aba</th>
+                    <th>OS Cobrada</th>
+                    <th>Data</th>
+                    <th>KM Cobrado</th>
+                    <th>KM Faturável (Pós-{raio_franquia:.0f}km)</th>
+                    <th>Qtd OSs no Dia</th>
+                    <th>Rota no Google Maps</th>
+                    <th>Endereço / Cidade</th>
+                </tr>
+            </thead>
+            <tbody>
+        """
+        for _, r in df_filtrado.iterrows():
+            km_val = float(r["KM Cobrado"])
+            is_high = km_val >= float(limite_alerta_km)
+            row_class = ' class="row-highlight"' if is_high else ''
+            
+            badge_html = f'<span class="badge-alto">⚠️ {km_val:,.1f} km</span>' if is_high else f'<span class="badge-normal">{km_val:,.1f} km</span>'
+            
+            link_maps = r["Link Maps (Geral do Dia)"] or r["Link Maps (Técnico)"]
+            if link_maps:
+                btn_link = f'<a href="{link_maps}" target="_blank" class="btn-maps">🗺️ Abrir Rota Maps</a>'
+            else:
+                btn_link = '<span style="color: #999;">-</span>'
+
+            html_tabela += f"""
+                <tr{row_class}>
+                    <td style="text-align: center; font-weight: 600;">{r['Aba']}</td>
+                    <td style="text-align: center; font-weight: 700; font-size: 14px;">{r['OS Cobrada']}</td>
+                    <td style="text-align: center;">{r['Data']}</td>
+                    <td style="text-align: center;">{badge_html}</td>
+                    <td style="text-align: center; font-weight: 600;">{r['KM Faturável Cobrado']:,.1f} km</td>
+                    <td style="text-align: center; font-weight: 700;">{r['Qtd OS Total Dia']}</td>
+                    <td style="text-align: center;">{btn_link}</td>
+                    <td>{r['Endereço OS']}</td>
+                </tr>
+            """
+        html_tabela += """
+            </tbody>
+        </table>
+        """
+        st.markdown(html_tabela, unsafe_allow_html=True)
+        st.caption("💡 Clique em **🗺️ Abrir Rota Maps** para abrir o trajeto direto no Google Maps traçado na tela.")
 
     with tab_dossie:
         dossies = res.get("dossies", {})
@@ -294,17 +395,15 @@ if "resultado_auditoria" in st.session_state:
             st.markdown("### 📸 Folha de Conferência da Rota (Pronta para Print)")
             st.caption("Você pode tirar print diretamente desta folha abaixo para arquivar ou anexar no fechamento.")
 
-            # Container formatado idêntico ao modelo da imagem
             st.markdown("""
             <div style="background-color: white; border: 2px solid #1F4E79; border-radius: 8px; padding: 25px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); margin-bottom: 25px;">
                 <h2 style="text-align: center; color: black; font-weight: 900; letter-spacing: 2px; margin-bottom: 2px;">ROTA DE KM</h2>
                 <h4 style="text-align: center; color: #333; margin-top: 0px; font-weight: 600; margin-bottom: 20px;">""" + dossie['data_formatada'] + """</h4>
             """, unsafe_allow_html=True)
 
-            # Tabela de OSs no estilo da imagem do usuário
             df_folha = pd.DataFrame(dossie["tabela_oss"])[["Ordem Serviço", "Cliente", "Cidade", "Data", "Serviço"]]
             
-            html_tabela = """
+            html_tabela_folha = """
             <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px; font-family: Calibri, Arial, sans-serif; font-size: 13px; color: black;">
                 <thead>
                     <tr style="background-color: #F2F4F7; border: 1.5px solid #000; text-align: center; font-weight: bold;">
@@ -318,7 +417,7 @@ if "resultado_auditoria" in st.session_state:
                 <tbody>
             """
             for _, row in df_folha.iterrows():
-                html_tabela += f"""
+                html_tabela_folha += f"""
                     <tr style="border: 1px solid #444; text-align: center;">
                         <td style="border: 1px solid #444; padding: 6px; font-weight: bold;">{row['Ordem Serviço']}</td>
                         <td style="border: 1px solid #444; padding: 6px; text-align: left;">{row['Cliente']}</td>
@@ -327,26 +426,23 @@ if "resultado_auditoria" in st.session_state:
                         <td style="border: 1px solid #444; padding: 6px;">{row['Serviço']}</td>
                     </tr>
                 """
-            html_tabela += """
+            html_tabela_folha += """
                 </tbody>
             </table>
             """
-            st.markdown(html_tabela, unsafe_allow_html=True)
+            st.markdown(html_tabela_folha, unsafe_allow_html=True)
 
-            # Destaque do TOTAL DE KM em letras garrafais idêntico ao modelo
             st.markdown(f"""
             <div style="text-align: center; font-size: 26px; font-weight: 900; color: black; margin-top: 15px; margin-bottom: 25px; letter-spacing: 1px;">
                 TOTAL DE {total_km_apurado:,.0f} KM
             </div>
             """, unsafe_allow_html=True)
 
-            # Imagens dos prints
             if img_t1:
                 st.image(img_t1, caption=f"Trecho 1 — {km_t1:,.0f} km", use_container_width=True)
             if img_t2:
                 st.image(img_t2, caption=f"Trecho 2 — {km_t2:,.0f} km", use_container_width=True)
 
-            # Quadro de Confronto e Auditoria
             km_cobrado = dossie["km_cobrado"]
             franquia = dossie["raio_franquia"]
             km_fat_cobrado = dossie["km_faturavel"]
@@ -375,56 +471,10 @@ if "resultado_auditoria" in st.session_state:
             st.markdown(status_box, unsafe_allow_html=True)
             st.markdown("</div>", unsafe_allow_html=True)
 
-    with tab_resumo:
-        df_resumo = pd.DataFrame(linhas)
-        
-        # Filtros
-        col_f1, col_f2 = st.columns(2)
-        with col_f1:
-            abas_unicas = ["Todas"] + list(df_resumo["Aba"].unique())
-            aba_filtro = st.selectbox("Filtrar por Aba:", abas_unicas)
-        with col_f2:
-            datas_unicas = ["Todas"] + list(df_resumo["Data"].unique())
-            data_filtro = st.selectbox("Filtrar por Data:", datas_unicas)
-
-        df_filtrado = df_resumo.copy()
-        if aba_filtro != "Todas":
-            df_filtrado = df_filtrado[df_filtrado["Aba"] == aba_filtro]
-        if data_filtro != "Todas":
-            df_filtrado = df_filtrado[df_filtrado["Data"] == data_filtro]
-
-        # Tabela com Links Clicáveis no Streamlit
-        st.dataframe(
-            df_filtrado[[
-                "Aba", "OS Cobrada", "Data", "Técnico da OS",
-                "KM Cobrado", "KM Faturável Cobrado", "Qtd OS Técnico", "Qtd OS Total Dia",
-                "Link Maps (Técnico)", "Link Maps (Geral do Dia)", "Endereço OS"
-            ]],
-            column_config={
-                "OS Cobrada": st.column_config.NumberColumn(format="%d"),
-                "KM Cobrado": st.column_config.NumberColumn(format="%.1f km"),
-                "KM Faturável Cobrado": st.column_config.NumberColumn(format="%.1f km"),
-                "Link Maps (Técnico)": st.column_config.LinkColumn(
-                    "Rota do Técnico (Maps)",
-                    display_text="🗺️ Abrir Rota Técnico"
-                ),
-                "Link Maps (Geral do Dia)": st.column_config.LinkColumn(
-                    "Rota Geral (Maps)",
-                    display_text="🗺️ Abrir Rota Geral"
-                ),
-            },
-            hide_index=True,
-            use_container_width=True
-        )
-
-        st.caption("ℹ️ Clique no botão **🗺️ Abrir Rota Técnico** ou **🗺️ Abrir Rota Geral** para abrir o Google Maps traçado no navegador.")
-
     with tab_detalhes:
         st.markdown("#### Lista Completa de Atendimentos por Dia")
         if detalhes:
             df_det = pd.DataFrame(detalhes)
-            
-            # Filtro por OS cobrada
             oss_cobradas = list(df_det["OS Âncora Fechamento"].unique())
             os_sel = st.selectbox("Selecione a OS Âncora do Fechamento:", oss_cobradas)
             
@@ -432,7 +482,7 @@ if "resultado_auditoria" in st.session_state:
             
             st.dataframe(
                 df_det_filtrado[[
-                    "Ordem", "OS Atendida", "Técnico", "Hora",
+                    "Ordem", "OS Atendida", "Hora",
                     "Cliente", "Endereço Limpo", "Bairro", "Cidade", "Situação"
                 ]],
                 column_config={
