@@ -384,7 +384,7 @@ st.markdown(
         {tag_logo}
         <div>
             <div class="main-header">Consigaz — Auditoria Automática de KM por Dia</div>
-            <div class="sub-header">Soma todos os KMs ditos no dia, calcula automaticamente quantos KMs deu a rota das OSs do dia e mostra se bate ou se há cobrança a maior</div>
+            <div class="sub-header">Soma todos os KMs ditos no dia, calcula a maior rota rodoviária possível no Google Maps (teto máximo com Base no início e no fim) e mostra se bate ou se há cobrança a maior</div>
         </div>
     </div>
     """,
@@ -539,7 +539,7 @@ if "resultado_auditoria" in st.session_state:
 
             st.markdown("#### 📅 Auditoria por Dia — Conferência Completa com Ruas (Tudo num Card só)")
             st.caption(
-                "Cada Card abaixo consolida tudo do dia: as **OSs que cobram KM**, a **Quilometragem calculada pelas Ruas (Google Maps)**, "
+                "Cada Card abaixo consolida tudo do dia: as **OSs que cobram KM**, a **Quilometragem calculada pela Maior Rota (Google Maps)**, "
                 "o **Veredito**, os botões de rota e a **Planilha completa de todas as OSs do dia com os endereços das ruas visitadas**."
             )
 
@@ -548,7 +548,7 @@ if "resultado_auditoria" in st.session_state:
             with m1:
                 st.metric("Total de KM Cobrado", f"{total_km_cobrado:,.1f} km", help="Soma de todos os KMs cobrados na planilha de fechamento")
             with m2:
-                st.metric("Total Calculado pelas Ruas", f"{total_km_mapa:,.1f} km", help="Soma das rotas rodoviárias calculadas pelo Google Maps / OSRM")
+                st.metric("Total Calculado (Maior Rota)", f"{total_km_mapa:,.1f} km", help="Soma das maiores rotas rodoviárias calculadas pelo Google Maps / OSRM com Base no início e no fim")
             with m3:
                 st.metric("Dias Aprovados (Bateu)", f"{len(dias_aprovados)} dias", delta="✅ 100% Coberto" if len(dias_aprovados) > 0 else None)
             with m4:
@@ -673,7 +673,7 @@ if "resultado_auditoria" in st.session_state:
                             <span class="metrica-sub">{txt_oss_cobrando}</span>
                         </div>
                         <div class="metrica-box">
-                            <span class="metrica-label">🛣️ KM CALCULADO PELAS RUAS (MAPS)</span>
+                            <span class="metrica-label">🛣️ MAIOR ROTA POSSÍVEL (MAPS)</span>
                             <span class="metrica-val" style="color: #38BDF8;">{km_mapa:,.1f} km</span>
                             <span class="metrica-sub">({txt_trechos})</span>
                         </div>
@@ -840,7 +840,7 @@ if "resultado_auditoria" in st.session_state:
                 f'<td colspan="5" style="border:1.5px solid #000;padding:7px;text-align:right;color:#000;">SOMA DOS KMs REGISTRADOS NO DIA ({dossie["Data"]}):</td>'
                 f'<td style="border:1.5px solid #000;padding:7px;color:#B91C1C;font-size:15px;">{dossie["Soma KM Cobrado no Dia"]:,.1f} km</td>'
                 f'<td style="border:1.5px solid #000;padding:7px;color:#000;">{dossie["Soma Pedágio no Dia"]:,.2f}</td>'
-                f'<td style="border:1.5px solid #000;padding:7px;text-align:left;color:#000;">KM Calculado da Rota: <b>{km_maps_folha:,.1f} km</b> ({dossie["Sequência da Rota"]})</td>'
+                f'<td style="border:1.5px solid #000;padding:7px;text-align:left;color:#000;">Maior KM Calculado da Rota: <b>{km_maps_folha:,.1f} km</b> ({dossie["Sequência da Rota"]})</td>'
                 '</tr>'
             )
             folha_pdf_html.append('</tbody></table>')
@@ -864,7 +864,7 @@ if "resultado_auditoria" in st.session_state:
             '<th>Data</th>',
             '<th>KM na OS</th>',
             '<th>SOMA DE KM DITO NO DIA</th>',
-            '<th>KM CALCULADO DA ROTA</th>',
+            '<th>MAIOR KM CALCULADO DA ROTA</th>',
             '<th>Total de OSs no Dia</th>',
             '<th>Cidade</th>',
             '<th>Rota por Cidades (Sem Erro)</th>',

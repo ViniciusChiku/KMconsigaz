@@ -9,6 +9,8 @@ import io
 import os
 import re
 import json
+import math
+import itertools
 import unicodedata
 import urllib.parse
 import urllib.request
@@ -131,11 +133,153 @@ def obter_coordenada_cidade(cidade, uf_padrao="RS"):
     return None
 
 
+def haversine_dist(c1, c2):
+    r = 6371.0
+    p1, p2 = math.radians(c1[0]), math.radians(c2[0])
+    dp = math.radians(c2[0] - c1[0])
+    dl = math.radians(c2[1] - c1[1])
+    a = math.sin(dp/2)**2 + math.cos(p1)*math.cos(p2)*math.sin(dl/2)**2
+    return 2 * r * math.asin(math.sqrt(a))
+
+
+def obter_matriz_distancias_haversine(coords):
+    n = len(coords)
+    matrix = [[0.0]*n for _ in range(n)]
+    for i in range(n):
+        for j in range(i+1, n):
+            d = haversine_dist(coords[i], coords[j]) * 1.28
+            matrix[i][j] = d
+            matrix[j][i] = d
+    return matrix
+
+
+def obter_matriz_distancias_osrm(coords):
+    """
+    Gera a matriz completa de distâncias rodoviárias entre todos os pontos via OSRM Table API.
+    Se a API falhar ou estiver offline, usa a distância geodésica com fator rodoviário (1.28).
+    """
+    n = len(coords)
+    if n <= 1:
+        return [[0.0]]
+    coords_str = ";".join(f"{c[1]:.5f},{c[0]:.5f}" for c in coords)
+    url = f"http://router.project-osrm.org/table/v1/driving/{coords_str}?annotations=distance"
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "ConsigazAuditoriaKM/3.0"})
+        with urllib.request.urlopen(req, timeout=4) as r:
+            data = json.loads(r.read().decode())
+            if "distances" in data and len(data["distances"]) == n:
+                mat = []
+                for row in data["distances"]:
+                    r_km = []
+                    for val in row:
+                        r_km.append(round(val / 1000.0, 1) if val is not None else 0.0)
+                    mat.append(r_km)
+                return mat
+    except Exception:
+        pass
+    return obter_matriz_distancias_haversine(coords)
+
+
+def encontrar_maior_circuito(matrix):
+    """
+    Dado que o índice 0 é a Base Consigaz (Início e Fim):
+    Encontra a permutação dos pontos intermediários (1..n-1) que MAXIMIZA
+    a distância total do circuito rodoviário (Max-TSP).
+    Retorna (melhor_ordem_intermediarios, maior_distancia).
+    """
+    n = len(matrix)
+    if n <= 2:
+        return list(range(1, n)), (matrix[0][1] + matrix[1][0]) if n == 2 else 0.0
+
+    intermed = list(range(1, n))
+    melhor_ordem = None
+    maior_dist = -1.0
+
+    if len(intermed) <= 7:
+        for perm in itertools.permutations(intermed):
+            seq = [0] + list(perm) + [0]
+            d = sum(matrix[seq[i]][seq[i+1]] for i in range(len(seq)-1))
+            if d > maior_dist:
+                maior_dist = d
+                melhor_ordem = list(perm)
+    else:
+        # Heurística rápida de maior distância para rotas com muitas cidades
+        restantes = set(intermed)
+        atual = [0]
+        while restantes:
+            melhor_p = None
+            melhor_pos = None
+            maior_ganho = -1.0
+            for p in restantes:
+                for pos in range(1, len(atual) + 1):
+                    cand = atual[:pos] + [p] + atual[pos:] + [0]
+                    d_cand = sum(matrix[cand[i]][cand[i+1]] for i in range(len(cand)-1))
+                    if d_cand > maior_ganho:
+                        maior_ganho = d_cand
+                        melhor_p = p
+                        melhor_pos = pos
+            atual.insert(melhor_pos, melhor_p)
+            restantes.remove(melhor_p)
+        melhor_ordem = atual[1:]
+        seq = [0] + melhor_ordem + [0]
+        maior_dist = sum(matrix[seq[i]][seq[i+1]] for i in range(len(seq)-1))
+
+    return melhor_ordem, round(maior_dist, 1)
+
+
+def encontrar_maior_caminho(matrix, start_idx=0, end_idx=None):
+    """
+    Encontra a sequência de pontos intermediários que MAXIMIZA a distância
+    entre start_idx e end_idx.
+    """
+    n = len(matrix)
+    if end_idx is None:
+        end_idx = n - 1
+    if start_idx == end_idx:
+        return encontrar_maior_circuito(matrix)
+
+    intermed = [i for i in range(n) if i != start_idx and i != end_idx]
+    if not intermed:
+        return [], matrix[start_idx][end_idx]
+
+    if len(intermed) <= 7:
+        maior_dist = -1.0
+        melhor_ordem = None
+        for perm in itertools.permutations(intermed):
+            seq = [start_idx] + list(perm) + [end_idx]
+            d = sum(matrix[seq[i]][seq[i+1]] for i in range(len(seq)-1))
+            if d > maior_dist:
+                maior_dist = d
+                melhor_ordem = list(perm)
+        return melhor_ordem, round(maior_dist, 1)
+    else:
+        restantes = set(intermed)
+        atual = [start_idx]
+        while restantes:
+            melhor_p = None
+            melhor_pos = None
+            maior_ganho = -1.0
+            for p in restantes:
+                for pos in range(1, len(atual) + 1):
+                    cand = atual[:pos] + [p] + atual[pos:] + [end_idx]
+                    d_cand = sum(matrix[cand[i]][cand[i+1]] for i in range(len(cand)-1))
+                    if d_cand > maior_ganho:
+                        maior_ganho = d_cand
+                        melhor_p = p
+                        melhor_pos = pos
+            atual.insert(melhor_pos, melhor_p)
+            restantes.remove(melhor_p)
+        melhor_ordem = atual[1:]
+        seq = [start_idx] + melhor_ordem + [end_idx]
+        maior_dist = sum(matrix[seq[i]][seq[i+1]] for i in range(len(seq)-1))
+        return melhor_ordem, round(maior_dist, 1)
+
+
 def calcular_rota_osrm_por_cidades(cidade_base, uf_base, lista_cidades_dia, qtd_enderecos_distintos=1):
     """
-    Calcula a quilometragem rodoviária real usando o servidor OSRM (OpenStreetMap)
+    Calcula a quilometragem rodoviária real buscando a MAIOR rota possível (Max-TSP)
     partindo da cidade da Base Consigaz, passando por todas as cidades visitadas no dia
-    na melhor sequência geográfica (Trip / Caixeiro Viajante) e retornando à Base.
+    e retornando à Base, mantendo a Base sempre no início e no fim.
     """
     coord_base = obter_coordenada_cidade(cidade_base, uf_base)
     if not coord_base:
@@ -144,7 +288,7 @@ def calcular_rota_osrm_por_cidades(cidade_base, uf_base, lista_cidades_dia, qtd_
             "km_urbano": 0.0,
             "km_total_estimado": 0.0,
             "cidades_ordenadas": lista_cidades_dia,
-            "sequencia_Formatada": " ➔ ".join([cidade_base] + lista_cidades_dia + [cidade_base])
+            "sequencia_formatada": " ➔ ".join([cidade_base] + lista_cidades_dia + [cidade_base])
         }
 
     coords = [coord_base]
@@ -174,39 +318,53 @@ def calcular_rota_osrm_por_cidades(cidade_base, uf_base, lista_cidades_dia, qtd_
             "sequencia_formatada": f"{cidade_base.title()} (Deslocamento Urbano Local)"
         }
 
-    coords_str = ";".join(f"{c[1]:.5f},{c[0]:.5f}" for c in coords)
     km_estrada = 0.0
     cidades_ord = nomes[1:]
     seq_completa = nomes + [nomes[0]]
 
-    # Consulta OSRM Trip (ordena as cidades na sequência real da rodovia e fecha o circuito de ida e volta)
-    url_trip = f"http://router.project-osrm.org/trip/v1/driving/{coords_str}?roundtrip=true&source=first&overview=false"
-    try:
-        req = urllib.request.Request(url_trip, headers={"User-Agent": "ConsigazAuditoriaKM/2.0"})
-        with urllib.request.urlopen(req, timeout=6) as resp:
-            data = json.loads(resp.read().decode())
-            if data.get("trips"):
-                km_estrada = round(data["trips"][0]["distance"] / 1000.0, 1)
-                wps = sorted(enumerate(data.get("waypoints", [])), key=lambda x: x[1].get("waypoint_index", 0))
-                ordem_idx = [idx for idx, _ in wps]
-                cidades_ord = [nomes[i] for i in ordem_idx if i != 0]
-                seq_completa = [nomes[0]] + cidades_ord + [nomes[0]]
-    except Exception:
-        pass
+    if len(coords) == 2:
+        # Apenas 1 cidade fora da base: Base -> Cidade 1 -> Base
+        cidades_ord = [nomes[1]]
+        seq_completa = [nomes[0], nomes[1], nomes[0]]
+        coords_max = [coords[0], coords[1], coords[0]]
+        s_coords = ";".join(f"{c[1]:.5f},{c[0]:.5f}" for c in coords_max)
+        url_route = f"http://router.project-osrm.org/route/v1/driving/{s_coords}?overview=false"
+        try:
+            req = urllib.request.Request(url_route, headers={"User-Agent": "ConsigazAuditoriaKM/3.0"})
+            with urllib.request.urlopen(req, timeout=4) as resp:
+                data = json.loads(resp.read().decode())
+                if data.get("routes"):
+                    km_estrada = round(data["routes"][0]["distance"] / 1000.0, 1)
+        except Exception:
+            pass
+        if km_estrada <= 0.0:
+            d = haversine_dist(coords[0], coords[1]) * 1.28 * 2.0
+            km_estrada = round(d, 1)
 
-    # Fallback: distância geodésica * fator rodoviário (1.28) caso o usuário esteja sem internet para o OSRM
-    if km_estrada <= 0.0:
-        import math
-        def haversine(c1, c2):
-            r = 6371.0
-            p1, p2 = math.radians(c1[0]), math.radians(c2[0])
-            dp = math.radians(c2[0] - c1[0])
-            dl = math.radians(c2[1] - c1[1])
-            a = math.sin(dp/2)**2 + math.cos(p1)*math.cos(p2)*math.sin(dl/2)**2
-            return 2 * r * math.asin(math.sqrt(a))
-        pts_circuito = coords + [coords[0]]
-        dist_reta = sum(haversine(pts_circuito[i], pts_circuito[i+1]) for i in range(len(pts_circuito)-1))
-        km_estrada = round(dist_reta * 1.28, 1)
+    elif len(coords) >= 3:
+        # 2 ou mais cidades fora da base: calcula a MAIOR rota possível (Max-TSP)
+        mat = obter_matriz_distancias_osrm(coords)
+        melhor_ordem, dist_est = encontrar_maior_circuito(mat)
+        
+        cidades_ord = [nomes[i] for i in melhor_ordem]
+        seq_completa = [nomes[0]] + cidades_ord + [nomes[0]]
+        
+        # Consulta OSRM Route na sequência exata da MAIOR rota
+        ordem_completa = [0] + melhor_ordem + [0]
+        coords_max = [coords[i] for i in ordem_completa]
+        s_coords = ";".join(f"{c[1]:.5f},{c[0]:.5f}" for c in coords_max)
+        url_route = f"http://router.project-osrm.org/route/v1/driving/{s_coords}?overview=false"
+        try:
+            req = urllib.request.Request(url_route, headers={"User-Agent": "ConsigazAuditoriaKM/3.0"})
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                data = json.loads(resp.read().decode())
+                if data.get("routes"):
+                    km_estrada = round(data["routes"][0]["distance"] / 1000.0, 1)
+        except Exception:
+            pass
+            
+        if km_estrada <= 0.0:
+            km_estrada = round(dist_est, 1)
 
     # Deslocamento urbano interno entre as ruas visitadas dentro das cidades (~2.5 km por endereço distinto visitado)
     km_urbano = round(max(4.0, qtd_enderecos_distintos * 2.5), 1)
@@ -263,6 +421,7 @@ def calcular_km_trechos_por_ruas(trechos_obj, base_endereco, uf_base="RS"):
     """
     Calcula a quilometragem rodoviária passando pelas ruas e paradas de cada trecho,
     somando o trajeto sequencial de cada trecho (ex: Trecho 1 + Trecho 2) de forma instantânea.
+    Garante a MAIOR rota possível (Max-TSP sem atalhos).
     """
     todos_trechos = trechos_obj.get("todos_trechos", [])
     if not todos_trechos:
@@ -273,7 +432,9 @@ def calcular_km_trechos_por_ruas(trechos_obj, base_endereco, uf_base="RS"):
 
     for idx, t in enumerate(todos_trechos, 1):
         paradas_t = [p for p in t.get("paradas", [])]
-        pontos_str = [t.get("origem", base_endereco)] + paradas_t + [t.get("destino", base_endereco)]
+        origem_str = t.get("origem", base_endereco)
+        destino_str = t.get("destino", base_endereco)
+        pontos_str = [origem_str] + paradas_t + [destino_str]
 
         coords_unicas = []
         qtd_mesma_cidade = 0
@@ -293,7 +454,7 @@ def calcular_km_trechos_por_ruas(trechos_obj, base_endereco, uf_base="RS"):
                 cidade_anterior = cid
 
         # Garante que o destino esteja representado
-        dest_cid = extrair_cidade_do_endereco(pontos_str[-1], uf_base)
+        dest_cid = extrair_cidade_do_endereco(destino_str, uf_base)
         dest_coord = obter_coordenada_cidade(dest_cid, uf_base)
         if dest_coord and (not coords_unicas or coords_unicas[-1] != dest_coord):
             coords_unicas.append(dest_coord)
@@ -312,34 +473,32 @@ def calcular_km_trechos_por_ruas(trechos_obj, base_endereco, uf_base="RS"):
             except Exception:
                 pass
         elif len(coords_unicas) > 2:
-            s_coords = ";".join(f"{c[1]:.5f},{c[0]:.5f}" for c in coords_unicas)
             is_circuito = (coords_unicas[0] == coords_unicas[-1])
+            mat_trecho = obter_matriz_distancias_osrm(coords_unicas)
             if is_circuito:
-                url_trip = f"http://router.project-osrm.org/trip/v1/driving/{s_coords[:-1]}?roundtrip=true&source=first&overview=false"
+                ordem_max, d_est = encontrar_maior_circuito(mat_trecho)
+                ordem_indices = [0] + ordem_max + [0]
             else:
-                url_trip = f"http://router.project-osrm.org/trip/v1/driving/{s_coords}?source=first&destination=last&overview=false"
+                ordem_max, d_est = encontrar_maior_caminho(mat_trecho, start_idx=0, end_idx=len(coords_unicas)-1)
+                ordem_indices = [0] + ordem_max + [len(coords_unicas)-1]
+
+            coords_max = [coords_unicas[i] for i in ordem_indices]
+            s_coords = ";".join(f"{c[1]:.5f},{c[0]:.5f}" for c in coords_max)
+            url_route = f"http://router.project-osrm.org/route/v1/driving/{s_coords}?overview=false"
             try:
-                req = urllib.request.Request(url_trip, headers={"User-Agent": "ConsigazAuditoriaKM/3.0"})
-                with urllib.request.urlopen(req, timeout=4) as resp:
+                req = urllib.request.Request(url_route, headers={"User-Agent": "ConsigazAuditoriaKM/3.0"})
+                with urllib.request.urlopen(req, timeout=5) as resp:
                     data = json.loads(resp.read().decode())
-                    if data.get("trips"):
-                        km_este_trecho = data["trips"][0]["distance"] / 1000.0
-                    elif data.get("routes"):
+                    if data.get("routes"):
                         km_este_trecho = data["routes"][0]["distance"] / 1000.0
             except Exception:
                 pass
+            if km_este_trecho <= 0.0:
+                km_este_trecho = d_est
 
         # Fallback geodésico se OSRM estiver indisponível
         if km_este_trecho <= 0.0 and len(coords_unicas) >= 2:
-            import math
-            def haversine(c1, c2):
-                r = 6371.0
-                p1, p2 = math.radians(c1[0]), math.radians(c2[0])
-                dp = math.radians(c2[0] - c1[0])
-                dl = math.radians(c2[1] - c1[1])
-                a = math.sin(dp/2)**2 + math.cos(p1)*math.cos(p2)*math.sin(dl/2)**2
-                return 2 * r * math.asin(math.sqrt(a))
-            dist_reta = sum(haversine(coords_unicas[i], coords_unicas[i+1]) for i in range(len(coords_unicas)-1))
+            dist_reta = sum(haversine_dist(coords_unicas[i], coords_unicas[i+1]) for i in range(len(coords_unicas)-1))
             km_este_trecho = dist_reta * 1.28
 
         # Deslocamento urbano interno entre as ruas da mesma cidade
@@ -1201,7 +1360,7 @@ def exportar_relatorio_excel(dados_auditoria, output_stream):
 
     headers_dia = [
         "Data", "OSs Cobrando KM no Dia", "SOMA KM COBRADO NO DIA",
-        "KM CALCULADO NO MAPA (ROTA DO DIA)", "DIFERENÇA (COBRADO - MAPA)",
+        "MAIOR KM CALCULADO NO MAPA (ROTA DO DIA)", "DIFERENÇA (COBRADO - MAPA)",
         "Total OSs no Dia", "Sequência da Rota por Cidades",
         "Link Google Maps (Rota por Cidades - Sem Erro)", "Link Google Maps (Com Ruas)"
     ]
