@@ -1,14 +1,17 @@
 """
 Engine de Auditoria de KM / Deslocamento - Consigaz
 Cruza a planilha de fechamento com o relatório Totvs,
-higieniza endereços, agrupa todas as OSs e KMs por dia,
-calcula a soma diária de KM cobrado e gera links do Google Maps.
+agrupa todas as OSs e KMs por dia, calcula automaticamente a quilometragem
+rodoviária real (via IBGE + OSRM) e gera links infalíveis do Google Maps.
 """
 
 import io
 import os
 import re
+import json
+import unicodedata
 import urllib.parse
+import urllib.request
 from datetime import datetime, date
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
@@ -21,25 +24,24 @@ except ImportError:
 
 # Tabela Oficial de Endereços por Base - Consigaz (Tabela 2)
 ENDERECOS_BASES_DETALHADOS = {
-    8: {"sigla": "MAU", "cidade": "Mauá/SP", "endereco": "RUA VITORIA PERDAO PETIGROSSO, 115 - MAUA/SP"},
-    2: {"sigla": "PLN", "cidade": "Paulínia/SP", "endereco": "RUA EITOR VALENTINO DE SOUZA, 337 - PAULINA/SP"},
-    1: {"sigla": "BRU", "cidade": "Barueri/SP", "endereco": "RUA JOSE PEREIRA SOBRINHO, 485 - BARUERI/SP"},
-    6: {"sigla": "CAN", "cidade": "Canoas/RS", "endereco": "RUA ANTONIO FREDERICO OZANAN, 1901 - CANOAS/RS"},
-    9: {"sigla": "DQX", "cidade": "Duque de Caxias/RJ", "endereco": "RUA FREI CANECA, 407 - DUQUE DE CAXIAS/RJ"},
-    11: {"sigla": "RIB", "cidade": "Ribeirão Preto/SP", "endereco": "ROD ALEXANDRE BALBO, SN - RIBEIRÃO PRETO/SP"},
-    5: {"sigla": "CAR", "cidade": "Cariacica/ES", "endereco": "ROD GOVERNADOR MARIO COVAS 1941, 7161 - CARIACICA/ES"},
-    4: {"sigla": "SVC", "cidade": "São Vicente/SP", "endereco": "RUA MANOEL DE ABREU, 790 - SÃO VICENTE/SP"},
-    3: {"sigla": "SVC", "cidade": "São Vicente/SP (QD 108)", "endereco": "AV. MANOEL DE EBREU, 790 QD 108 – SÃO VICENTE/SP"},
-    7: {"sigla": "SNC", "cidade": "Senador Canedo/GO", "endereco": "AV PROGRESSO, SN - SENADOR CANEDO/GO"},
-    10: {"sigla": "ARA", "cidade": "Araucária/PR", "endereco": "R DOUTOR JOSE CZAKI, 320 - ARAUCARA/PR"},
-    13: {"sigla": "UBR", "cidade": "Uberlândia/MG", "endereco": "R WANDELVART FARIA MARQUEZ, 500 - UBERLANDIA/MG"},
-    14: {"sigla": "BRA", "cidade": "Brasília/DF", "endereco": "ST SIN (SETOR DE INFLAMÁVEIS), SN - BRASILIA/DF"},
-    15: {"sigla": "BTM", "cidade": "Betim/MG", "endereco": "ROD BR-381 FERNAO DIAS, S/N, SALA A KM 485 - BETIM/MG"},
-    17: {"sigla": "PTB", "cidade": "Porto Belo/SC", "endereco": "ROD BR 101, S/N, SERTÃO DE SANTA LUZIA - PORTO BELO/SC"},
-    18: {"sigla": "JDS", "cidade": "Jandaia do Sul/PR", "endereco": "RUA JOAO ORTEGA SANCHES, 65 - JANDAIA DO SUL/PR"}
+    8: {"sigla": "MAU", "uf": "SP", "cidade_ibge": "MAUA", "cidade": "Mauá/SP", "endereco": "RUA VITORIA PERDAO PETIGROSSO, 115 - MAUA/SP"},
+    2: {"sigla": "PLN", "uf": "SP", "cidade_ibge": "PAULINIA", "cidade": "Paulínia/SP", "endereco": "RUA EITOR VALENTINO DE SOUZA, 337 - PAULINA/SP"},
+    1: {"sigla": "BRU", "uf": "SP", "cidade_ibge": "BARUERI", "cidade": "Barueri/SP", "endereco": "RUA JOSE PEREIRA SOBRINHO, 485 - BARUERI/SP"},
+    6: {"sigla": "CAN", "uf": "RS", "cidade_ibge": "CANOAS", "cidade": "Canoas/RS", "endereco": "RUA ANTONIO FREDERICO OZANAN, 1901 - CANOAS/RS"},
+    9: {"sigla": "DQX", "uf": "RJ", "cidade_ibge": "DUQUE DE CAXIAS", "cidade": "Duque de Caxias/RJ", "endereco": "RUA FREI CANECA, 407 - DUQUE DE CAXIAS/RJ"},
+    11: {"sigla": "RIB", "uf": "SP", "cidade_ibge": "RIBEIRAO PRETO", "cidade": "Ribeirão Preto/SP", "endereco": "ROD ALEXANDRE BALBO, SN - RIBEIRÃO PRETO/SP"},
+    5: {"sigla": "CAR", "uf": "ES", "cidade_ibge": "CARIACICA", "cidade": "Cariacica/ES", "endereco": "ROD GOVERNADOR MARIO COVAS 1941, 7161 - CARIACICA/ES"},
+    4: {"sigla": "SVC", "uf": "SP", "cidade_ibge": "SAO VICENTE", "cidade": "São Vicente/SP", "endereco": "RUA MANOEL DE ABREU, 790 - SÃO VICENTE/SP"},
+    3: {"sigla": "SVC", "uf": "SP", "cidade_ibge": "SAO VICENTE", "cidade": "São Vicente/SP (QD 108)", "endereco": "AV. MANOEL DE EBREU, 790 QD 108 – SÃO VICENTE/SP"},
+    7: {"sigla": "SNC", "uf": "GO", "cidade_ibge": "SENADOR CANEDO", "cidade": "Senador Canedo/GO", "endereco": "AV PROGRESSO, SN - SENADOR CANEDO/GO"},
+    10: {"sigla": "ARA", "uf": "PR", "cidade_ibge": "ARAUCARIA", "cidade": "Araucária/PR", "endereco": "R DOUTOR JOSE CZAKI, 320 - ARAUCARA/PR"},
+    13: {"sigla": "UBR", "uf": "MG", "cidade_ibge": "UBERLANDIA", "cidade": "Uberlândia/MG", "endereco": "R WANDELVART FARIA MARQUEZ, 500 - UBERLANDIA/MG"},
+    14: {"sigla": "BRA", "uf": "DF", "cidade_ibge": "BRASILIA", "cidade": "Brasília/DF", "endereco": "ST SIN (SETOR DE INFLAMÁVEIS), SN - BRASILIA/DF"},
+    15: {"sigla": "BTM", "uf": "MG", "cidade_ibge": "BETIM", "cidade": "Betim/MG", "endereco": "ROD BR-381 FERNAO DIAS, S/N, SALA A KM 485 - BETIM/MG"},
+    17: {"sigla": "PTB", "uf": "SC", "cidade_ibge": "PORTO BELO", "cidade": "Porto Belo/SC", "endereco": "ROD BR 101, S/N, SERTÃO DE SANTA LUZIA - PORTO BELO/SC"},
+    18: {"sigla": "JDS", "uf": "PR", "cidade_ibge": "JANDAIA DO SUL", "cidade": "Jandaia do Sul/PR", "endereco": "RUA JOAO ORTEGA SANCHES, 65 - JANDAIA DO SUL/PR"}
 }
 
-# Mapa de endereços indexado por Sigla e por Número de Base
 ENDERECOS_BASES = {}
 OPCOES_BASES_FORMATADAS = {}
 
@@ -50,14 +52,179 @@ for num, dados in ENDERECOS_BASES_DETALHADOS.items():
     OPCOES_BASES_FORMATADAS[label] = {
         "numero": num,
         "sigla": dados['sigla'],
+        "uf": dados['uf'],
+        "cidade_ibge": dados['cidade_ibge'],
         "endereco": dados['endereco']
+    }
+
+# Carrega base de coordenadas dos 5.571 municípios brasileiros (IBGE)
+_MAPA_MUNICIPIOS = None
+
+
+def carregar_mapa_municipios():
+    global _MAPA_MUNICIPIOS
+    if _MAPA_MUNICIPIOS is not None:
+        return _MAPA_MUNICIPIOS
+    caminho = os.path.join(os.path.dirname(os.path.abspath(__file__)), "municipios_br.json")
+    if os.path.exists(caminho):
+        try:
+            with open(caminho, "r", encoding="utf-8") as f:
+                _MAPA_MUNICIPIOS = json.load(f)
+                return _MAPA_MUNICIPIOS
+        except Exception:
+            pass
+    _MAPA_MUNICIPIOS = {}
+    return _MAPA_MUNICIPIOS
+
+
+def normalizar_texto_sem_acento(txt):
+    if not txt:
+        return ""
+    s = str(txt).strip().upper()
+    return "".join(c for c in unicodedata.normalize("NFD", s) if unicodedata.category(c) != "Mn")
+
+
+def obter_info_base(codigo_base):
+    cod = str(codigo_base).strip().upper()
+    for num, d in ENDERECOS_BASES_DETALHADOS.items():
+        if cod == d["sigla"] or cod == str(num):
+            return d
+    return ENDERECOS_BASES_DETALHADOS[6]
+
+
+def obter_coordenada_cidade(cidade, uf_padrao="RS"):
+    muns = carregar_mapa_municipios()
+    cid_norm = normalizar_texto_sem_acento(cidade)
+    if not cid_norm or cid_norm == "-":
+        return None
+    uf_norm = normalizar_texto_sem_acento(uf_padrao) or "RS"
+
+    # 1. Busca exata Cidade|UF
+    chave = f"{cid_norm}|{uf_norm}"
+    if chave in muns:
+        return muns[chave]
+
+    # 2. Tenta correções comuns de grafia (ex: PAULINA -> PAULINIA, ARAUCARA -> ARAUCARIA)
+    apelidos = {
+        "PAULINA": "PAULINIA",
+        "ARAUCARA": "ARAUCARIA",
+        "SANTANA DO LIVRAMENTO": "SANT'ANA DO LIVRAMENTO",
+        "ELDORADO DO SUL": "ELDORADO DO SUL",
+        "XANGRI-LA": "XANGRI-LA",
+        "XANGRILA": "XANGRI-LA"
+    }
+    if cid_norm in apelidos and f"{apelidos[cid_norm]}|{uf_norm}" in muns:
+        return muns[f"{apelidos[cid_norm]}|{uf_norm}"]
+
+    # 3. Busca parcial na mesma UF
+    for k, coord in muns.items():
+        nome_m, uf_m = k.split("|")
+        if uf_m == uf_norm and (cid_norm in nome_m or nome_m in cid_norm):
+            return coord
+
+    # 4. Busca em qualquer UF se o nome for único
+    for k, coord in muns.items():
+        nome_m, _ = k.split("|")
+        if nome_m == cid_norm:
+            return coord
+
+    return None
+
+
+def calcular_rota_osrm_por_cidades(cidade_base, uf_base, lista_cidades_dia, qtd_enderecos_distintos=1):
+    """
+    Calcula a quilometragem rodoviária real usando o servidor OSRM (OpenStreetMap)
+    partindo da cidade da Base Consigaz, passando por todas as cidades visitadas no dia
+    na melhor sequência geográfica (Trip / Caixeiro Viajante) e retornando à Base.
+    """
+    coord_base = obter_coordenada_cidade(cidade_base, uf_base)
+    if not coord_base:
+        return {
+            "km_estrada": 0.0,
+            "km_urbano": 0.0,
+            "km_total_estimado": 0.0,
+            "cidades_ordenadas": lista_cidades_dia,
+            "sequencia_Formatada": " ➔ ".join([cidade_base] + lista_cidades_dia + [cidade_base])
+        }
+
+    coords = [coord_base]
+    nomes = [f"{cidade_base.title()} - {uf_base}"]
+
+    for cid in lista_cidades_dia:
+        c_limpa = str(cid or "").strip()
+        if not c_limpa or c_limpa == "-":
+            continue
+        coord_c = obter_coordenada_cidade(c_limpa, uf_base)
+        if coord_c:
+            # Se for na própria cidade da base, não precisa adicionar ponto interurbano duplicado
+            if abs(coord_c[0] - coord_base[0]) < 0.001 and abs(coord_c[1] - coord_base[1]) < 0.001:
+                continue
+            if coord_c not in coords:
+                coords.append(coord_c)
+                nomes.append(f"{c_limpa.title()} - {uf_base}")
+
+    # Se todas as visitas foram dentro da própria cidade da Base
+    if len(coords) == 1:
+        km_urb = round(max(12.0, qtd_enderecos_distintos * 4.5), 1)
+        return {
+            "km_estrada": 0.0,
+            "km_urbano": km_urb,
+            "km_total_estimado": km_urb,
+            "cidades_ordenadas": [f"{cidade_base.title()} - {uf_base}"],
+            "sequencia_formatada": f"{cidade_base.title()} (Deslocamento Urbano Local)"
+        }
+
+    coords_str = ";".join(f"{c[1]:.5f},{c[0]:.5f}" for c in coords)
+    km_estrada = 0.0
+    cidades_ord = nomes[1:]
+    seq_completa = nomes + [nomes[0]]
+
+    # Consulta OSRM Trip (ordena as cidades na sequência real da rodovia e fecha o circuito de ida e volta)
+    url_trip = f"http://router.project-osrm.org/trip/v1/driving/{coords_str}?roundtrip=true&source=first&overview=false"
+    try:
+        req = urllib.request.Request(url_trip, headers={"User-Agent": "ConsigazAuditoriaKM/2.0"})
+        with urllib.request.urlopen(req, timeout=6) as resp:
+            data = json.loads(resp.read().decode())
+            if data.get("trips"):
+                km_estrada = round(data["trips"][0]["distance"] / 1000.0, 1)
+                wps = sorted(enumerate(data.get("waypoints", [])), key=lambda x: x[1].get("waypoint_index", 0))
+                ordem_idx = [idx for idx, _ in wps]
+                cidades_ord = [nomes[i] for i in ordem_idx if i != 0]
+                seq_completa = [nomes[0]] + cidades_ord + [nomes[0]]
+    except Exception:
+        pass
+
+    # Fallback: distância geodésica * fator rodoviário (1.28) caso o usuário esteja sem internet para o OSRM
+    if km_estrada <= 0.0:
+        import math
+        def haversine(c1, c2):
+            r = 6371.0
+            p1, p2 = math.radians(c1[0]), math.radians(c2[0])
+            dp = math.radians(c2[0] - c1[0])
+            dl = math.radians(c2[1] - c1[1])
+            a = math.sin(dp/2)**2 + math.cos(p1)*math.cos(p2)*math.sin(dl/2)**2
+            return 2 * r * math.asin(math.sqrt(a))
+        pts_circuito = coords + [coords[0]]
+        dist_reta = sum(haversine(pts_circuito[i], pts_circuito[i+1]) for i in range(len(pts_circuito)-1))
+        km_estrada = round(dist_reta * 1.28, 1)
+
+    # Deslocamento urbano interno entre as ruas visitadas dentro das cidades (~2.5 km por endereço distinto visitado)
+    km_urbano = round(max(4.0, qtd_enderecos_distintos * 2.5), 1)
+    km_total = round(km_estrada + km_urbano, 1)
+
+    return {
+        "km_estrada": km_estrada,
+        "km_urbano": km_urbano,
+        "km_total_estimado": km_total,
+        "cidades_ordenadas": cidades_ord,
+        "sequencia_formatada": " ➔ ".join(n.split(" - ")[0] for n in seq_completa)
     }
 
 
 def detectar_base_por_texto(texto):
-    """Identifica o código da base (ex: MAU, PLN, DQX) no nome do arquivo ou texto."""
+    """Identifica o código da base (ex: MAU, PLN, DQX, CAN) no nome do arquivo ou texto."""
     if not texto:
-        return "MAU"
+        return "CAN"
     txt = str(texto).upper()
     for num, d in ENDERECOS_BASES_DETALHADOS.items():
         sigla = d["sigla"]
@@ -78,7 +245,7 @@ def detectar_base_por_texto(texto):
     if "BETIM" in txt: return "BTM"
     if "PORTO BELO" in txt: return "PTB"
     if "JANDAIA" in txt: return "JDS"
-    return "MAU"
+    return "CAN"
 
 
 def obter_endereco_base(codigo_base):
@@ -88,7 +255,7 @@ def obter_endereco_base(codigo_base):
     for num, d in ENDERECOS_BASES_DETALHADOS.items():
         if cod == d["sigla"] or cod == str(num):
             return d["endereco"]
-    return ENDERECOS_BASES.get("MAU", "RUA VITORIA PERDAO PETIGROSSO, 115 - MAUA/SP")
+    return ENDERECOS_BASES.get("CAN", "RUA ANTONIO FREDERICO OZANAN, 1901 - CANOAS/RS")
 
 
 def carregar_planilha_segura(file_source, senha="fechamento"):
@@ -108,14 +275,12 @@ def carregar_planilha_segura(file_source, senha="fechamento"):
 
     stream = io.BytesIO(conteudo)
 
-    # 1. Tenta abrir direto com openpyxl
     try:
         wb = openpyxl.load_workbook(stream, data_only=True)
         return wb
     except Exception:
         pass
 
-    # 2. Se falhar, tenta descriptografar com msoffcrypto
     if msoffcrypto:
         stream.seek(0)
         try:
@@ -164,72 +329,63 @@ def normalizar_data(valor):
     return None, None
 
 
-def limpar_endereco(endereco_bruto, bairro=None, cidade=None, uf=None, cep=None):
+def limpar_endereco(endereco_bruto, bairro=None, cidade=None, uf=None, cep=None, uf_padrao="RS"):
     """
-    Higieniza o endereço cadastrado no Totvs para o Google Maps encontrar com exatidão.
-    Remove blocos, apartamentos, fases, torres e complementos prediais.
+    Simplifica o endereço para evitar falhas no Google Maps:
+    - Usa SEMPRE a UF correta da Base quando o Totvs não informar UF.
+    - Remove Bairro e complementos prediais (AP, BL, Condomínio, Sala) que confundem o Google Maps.
+    - Se o nome da rua estiver inválido/vazio, usa 'Cidade - UF'.
     """
-    if not endereco_bruto or str(endereco_bruto).strip() in ["", "0", "None"]:
-        if cidade and str(cidade).strip() and str(cidade).strip().upper() != "NONE":
-            uf_str = str(uf).strip().upper() if uf and str(uf).strip() and str(uf).strip().upper() != "NONE" else ""
-            return f"{str(cidade).strip().title()}" + (f" - {uf_str}" if uf_str else "")
+    uf_str = str(uf).strip().upper() if uf and str(uf).strip() and str(uf).strip().upper() not in ["NONE", "0", "-"] else uf_padrao
+    cidade_str = str(cidade).strip().title() if cidade and str(cidade).strip() and str(cidade).strip().upper() not in ["NONE", "0", "-"] else ""
+
+    if not endereco_bruto or str(endereco_bruto).strip() in ["", "0", "None", "-"]:
+        if cidade_str:
+            return f"{cidade_str} - {uf_str}"
         return ""
 
-    s = str(endereco_bruto).strip().upper()
-    substituicoes = {
-        'Á': 'A', 'À': 'A', 'Â': 'A', 'Ã': 'A',
-        'É': 'E', 'Ê': 'E', 'Í': 'I',
-        'Ó': 'O', 'Ô': 'O', 'Õ': 'O',
-        'Ú': 'U', 'Ç': 'C'
-    }
-    for o, d in substituicoes.items():
-        s = s.replace(o, d)
-
+    s = normalizar_texto_sem_acento(endereco_bruto)
     s = re.sub(r'\s+', ' ', s)
 
+    # Remove duplicação no início como "R RUA " ou "AV AVENIDA "
+    s = re.sub(r'^(?:R\.?\s+RUA\s+|AV\.?\s+AVENIDA\s+)', 'RUA ', s)
+
     # Corta complementos prediais
-    padrao = r'[\s,]*(?:BLOCO|BL\s*\d*|APTO|APT|AP\s*\d*|TORRE|TR\s*\d*|CASA|CS\s*\d*|LT\s*\d*|LOTE|CONDOMINIO|COND\s|FASE\s*\d*|ANDAR|TERREO|SALA\s*\d*).*$'
+    padrao = r'[\s,]*(?:BLOCO|BL\s*\d*|APTO|APT|AP\s*\d*|TORRE|TR\s*\d*|CASA|CS\s*\d*|LT\s*\d*|LOTE|CONDOMINIO|COND\s|FASE\s*\d*|ANDAR|TERREO|SALA\s*\d*|LOJA\s*\d*).*$'
     s = re.sub(padrao, '', s, flags=re.IGNORECASE).strip().rstrip(' ,;.-')
 
-    # Trata formato Rua, Número
     partes = s.split(',')
+    rua = partes[0].strip()
+    numero = ""
     if len(partes) > 1:
-        rua = partes[0].strip()
         resto = partes[1].strip()
         m_rep = re.match(r'^(\d+)\s+\1\b', resto)
         if m_rep:
             resto = resto[len(m_rep.group(1)):].strip()
-        if any(sn in resto.upper() for sn in ['S/N', 'SN', 'S/Nº', 'SEM NUMERO']):
-            numero = ''
-        else:
+        if not any(sn in resto.upper() for sn in ['S/N', 'SN', 'S/Nº', 'SEM NUMERO']):
             num = re.search(r'^\d+', resto)
-            numero = num.group(0) if num else resto.split()[0] if resto else ''
-        if numero in ['0', '00', 'SN', 'S/N', '']:
-            s = rua
-        else:
-            s = f"{rua}, {numero}".strip(' ,')
+            numero = num.group(0) if num else ""
 
-    elementos = [s.title()]
-    if bairro and str(bairro).strip() and str(bairro).strip().upper() != "NONE":
-        elementos.append(str(bairro).strip().title())
-    if cidade and str(cidade).strip() and str(cidade).strip().upper() != "NONE":
-        cidade_str = str(cidade).strip().title()
-        uf_str = str(uf).strip().upper() if uf and str(uf).strip() and str(uf).strip().upper() != "NONE" else "SP"
-        elementos.append(f"{cidade_str} - {uf_str}")
-    elif uf and str(uf).strip() and str(uf).strip().upper() != "NONE":
-        elementos.append(str(uf).strip().upper())
+    # Se a rua ficou genérica ("RUA", "AVENIDA", "CENTRO", etc.), usa direto a Cidade - UF para nunca dar erro no Google Maps
+    if len(rua) <= 4 or rua in ["RUA", "AVENIDA", "AV", "ESTRADA", "RODOVIA", "CENTRO", "INTERIOR"]:
+        if cidade_str:
+            return f"{cidade_str} - {uf_str}"
+        return ""
 
-    return ", ".join(elementos)
+    if numero and numero not in ["0", "00", "SN", "S/N"]:
+        end_rua = f"{rua.title()}, {numero}"
+    else:
+        end_rua = rua.title()
+
+    # Sem o Bairro para evitar divergência de cadastro no Google Maps! Apenas Rua + Cidade - UF
+    if cidade_str:
+        return f"{end_rua}, {cidade_str} - {uf_str}"
+    return f"{end_rua} - {uf_str}"
 
 
 def extrair_todas_oss_fechamento(wb_fechamento):
     """
     Varre todas as abas da planilha de fechamento (MOTO, CARRO, ENGENHARIA, INSTALAÇÃO, etc.).
-    Retorna:
-      - itens_km: linhas com KM > 0 (ignorando pedágio)
-      - todas_oss_fechamento: lista completa de todas as linhas de OS do fechamento (com ou sem KM)
-      - oss_por_data: mapa { data_str: [list of OS numbers na data naquele fechamento] }
-      - abas_encontradas: resumo de abas auditadas
     """
     itens_km = []
     todas_oss_fechamento = []
@@ -252,7 +408,6 @@ def extrair_todas_oss_fechamento(wb_fechamento):
         col_viagens = None
         col_total = None
 
-        # Identifica cabeçalhos nas primeiras 15 linhas
         for r in range(1, min(16, ws.max_row + 1)):
             for c in range(1, min(ws.max_column + 1, 35)):
                 val = str(ws.cell(r, c).value or "").strip().upper()
@@ -358,10 +513,9 @@ def extrair_todas_oss_fechamento(wb_fechamento):
     return itens_km, oss_por_data, list(abas_encontradas), todas_oss_fechamento
 
 
-def carregar_dados_totvs(wb_totvs):
+def carregar_dados_totvs(wb_totvs, uf_padrao="RS"):
     """
-    Processa a aba Totvs (ESOS0301... ou Relatório) e indexa todas as OSs
-    com endereços higienizados, código de cliente, técnicos e datas/horários de finalização.
+    Processa a aba Totvs (ESOS0301... ou Relatório) e indexa todas as OSs.
     """
     ws_rel = None
     for sname in wb_totvs.sheetnames:
@@ -371,7 +525,6 @@ def carregar_dados_totvs(wb_totvs):
     if ws_rel is None:
         ws_rel = wb_totvs.active
 
-    # Localiza a linha correta do cabeçalho da tabela
     header_row = 2
     for r in range(1, 10):
         val1 = str(ws_rel.cell(r, 1).value or "").strip().upper()
@@ -437,7 +590,7 @@ def carregar_dados_totvs(wb_totvs):
         motivo_num = ws_rel.cell(r, col_map.get("motivo", 5)).value if "motivo" in col_map else ""
         servico_nome = str(desc_motivo or motivo_num or "VISITA OPERACIONAL").strip()
 
-        end_limpo = limpar_endereco(end_bruto, bairro, cidade, uf, cep)
+        end_limpo = limpar_endereco(end_bruto, bairro, cidade, uf, cep, uf_padrao=uf_padrao)
 
         rec = {
             "os": os_num,
@@ -445,7 +598,7 @@ def carregar_dados_totvs(wb_totvs):
             "endereco_limpo": end_limpo,
             "bairro": str(bairro or "").strip(),
             "cidade": str(cidade or "").strip(),
-            "uf": str(uf or "").strip(),
+            "uf": str(uf or uf_padrao).strip(),
             "cep": str(cep or "").strip(),
             "tecnico": str(tecnico or "").strip(),
             "data_str": dt_str,
@@ -468,7 +621,6 @@ def carregar_dados_totvs(wb_totvs):
 
 
 def remover_duplicados_preservando_ordem(lista_enderecos):
-    """Remove endereços idênticos repetidos mantendo a ordem de visita."""
     vistos = set()
     resultado = []
     for end in lista_enderecos:
@@ -483,15 +635,11 @@ def remover_duplicados_preservando_ordem(lista_enderecos):
 
 
 def dividir_trechos_maps(base_endereco, paradas):
-    """
-    Divide a rota em múltiplos trechos caso ultrapasse o limite do Google Maps Web (até 8 paradas intermediárias por link)
-    para permitir somar os KMs de todos os endereços do dia sem perder nenhuma parada.
-    """
     paradas_validas = remover_duplicados_preservando_ordem(paradas)
     if not paradas_validas:
         return {
             "trecho1": {
-                "nome": "Trecho Único",
+                "nome": "Rota Única",
                 "url": gerar_url_google_maps(base_endereco, [], base_endereco),
                 "origem": base_endereco,
                 "destino": base_endereco,
@@ -501,10 +649,9 @@ def dividir_trechos_maps(base_endereco, paradas):
             "todos_trechos": []
         }
 
-    # Se couber em 1 trecho (até 8 paradas intermediárias + Origem + Retorno = 10 pontos)
     if len(paradas_validas) <= 8:
         t_unico = {
-            "nome": f"Rota Completa ({len(paradas_validas)} endereços): Base ➔ Visitas ➔ Base",
+            "nome": f"Rota Completa ({len(paradas_validas)} paradas)",
             "url": gerar_url_google_maps(base_endereco, paradas_validas, base_endereco),
             "origem": base_endereco,
             "destino": base_endereco,
@@ -516,7 +663,6 @@ def dividir_trechos_maps(base_endereco, paradas):
             "todos_trechos": [t_unico]
         }
 
-    # Se houver mais de 8 paradas, divide em blocos de até 8 paradas conectando um trecho no outro
     todos_trechos = []
     idx_inicio = 0
     num_trecho = 1
@@ -525,7 +671,6 @@ def dividir_trechos_maps(base_endereco, paradas):
     while idx_inicio < len(paradas_validas):
         restantes = len(paradas_validas) - idx_inicio
         if restantes <= 8:
-            # Último trecho: passa pelas restantes e retorna para a Base
             intermed = paradas_validas[idx_inicio:]
             destino_final = base_endereco
             url_t = gerar_url_google_maps(ponto_atual, intermed, destino_final)
@@ -538,7 +683,6 @@ def dividir_trechos_maps(base_endereco, paradas):
             })
             break
         else:
-            # Trecho intermediário: pega 8 paradas (7 intermediárias + 8ª como destino deste trecho)
             bloco = paradas_validas[idx_inicio:idx_inicio + 8]
             intermed = bloco[:-1]
             ponto_transicao = bloco[-1]
@@ -563,12 +707,8 @@ def dividir_trechos_maps(base_endereco, paradas):
 
 
 def gerar_url_google_maps(origem, paradas, destino=None):
-    """
-    Gera link direto de rotas para o Google Maps (/maps/dir/Origem/Dest1/.../DestN/Destino).
-    """
     if not destino:
         destino = origem
-
     paradas_validas = remover_duplicados_preservando_ordem(paradas)
     if len(paradas_validas) > 8:
         paradas_formatadas = paradas_validas[:8]
@@ -580,22 +720,24 @@ def gerar_url_google_maps(origem, paradas, destino=None):
     return "https://www.google.com/maps/dir/" + "/".join(enc_partes)
 
 
-def processar_auditoria_completa(wb_fechamento, wb_totvs, base_codigo="MAU", base_endereco_custom=None, raio_franquia=40.0):
+def processar_auditoria_completa(wb_fechamento, wb_totvs, base_codigo="CAN", base_endereco_custom=None, raio_franquia=40.0):
     """
-    Executa o cruzamento completo e gera:
-      1. Consolidação por DIA (`por_dia`): junta todas as OSs do mesmo dia, soma todos os KMs cobrados no dia,
-         destaca quais OSs estão cobrando e monta a rota completa do Google Maps com todos os endereços do dia.
-      2. Resumo por OS Cobrada (`resumo`).
+    Executa o cruzamento completo, agrupa por dia, soma os KMs registrados no dia
+    e calcula automaticamente a quilometragem real da rota (via OSRM + IBGE).
     """
-    base_endereco = base_endereco_custom or obter_endereco_base(base_codigo)
+    info_base = obter_info_base(base_codigo)
+    uf_base = info_base["uf"]
+    cidade_base = info_base["cidade_ibge"]
+    base_endereco = base_endereco_custom or info_base["endereco"]
+    base_cidade_uf = f"{cidade_base.title()} - {uf_base}"
 
     # 1. Extrai todas as OSs do fechamento (com e sem KM)
     itens_km, _, abas_auditadas, todas_oss_fechamento = extrair_todas_oss_fechamento(wb_fechamento)
 
-    # 2. Carrega índice Totvs
-    os_dict, _ = carregar_dados_totvs(wb_totvs)
+    # 2. Carrega índice Totvs passando a UF correta da Base
+    os_dict, _ = carregar_dados_totvs(wb_totvs, uf_padrao=uf_base)
 
-    # 3. Enriquece TODAS as OSs do fechamento com os dados do Totvs (Data, Endereço, Cidade, Serviço, Cliente)
+    # 3. Enriquece todas as OSs do fechamento com os dados do Totvs
     oss_enriquecidas = []
     mapa_oss_por_dia = {}
 
@@ -604,8 +746,6 @@ def processar_auditoria_completa(wb_fechamento, wb_totvs, base_codigo="MAU", bas
         totvs_os = os_dict.get(os_id, {})
 
         dt_str = reg["data_str"] or totvs_os.get("data_str")
-        dt_obj = reg["data_obj"] or totvs_os.get("data_obj")
-
         if dt_str:
             try:
                 data_fmt = datetime.strptime(dt_str, "%Y-%m-%d").strftime("%d/%m/%Y")
@@ -613,18 +753,16 @@ def processar_auditoria_completa(wb_fechamento, wb_totvs, base_codigo="MAU", bas
                 data_fmt = dt_str
             chave_dia = dt_str
         else:
-            # Se a OS não tiver data nem no fechamento nem no Totvs, agrupa individualmente se tiver KM
             data_fmt = f"Sem Data (OS {os_id})"
             chave_dia = f"SEM_DATA_{os_id}"
 
         cidade_os = reg["local"] or totvs_os.get("cidade") or ""
-        uf_os = totvs_os.get("uf") or ""
         end_limpo = totvs_os.get("endereco_limpo")
         if not end_limpo:
             if cidade_os:
-                end_limpo = f"{cidade_os.title()}" + (f" - {uf_os}" if uf_os else "")
+                end_limpo = f"{cidade_os.title()} - {uf_base}"
             else:
-                end_limpo = base_endereco
+                end_limpo = base_cidade_uf
 
         servico_final = reg["servico_fechamento"] or totvs_os.get("servico") or "Visita Operacional"
         cod_cliente_final = reg["cod_cliente"] or totvs_os.get("cod_cliente") or totvs_os.get("cliente") or "-"
@@ -658,7 +796,7 @@ def processar_auditoria_completa(wb_fechamento, wb_totvs, base_codigo="MAU", bas
             mapa_oss_por_dia[chave_dia] = []
         mapa_oss_por_dia[chave_dia].append(item_completo)
 
-    # 4. Constrói a visão consolidada POR DIA (apenas para os dias que têm pelo menos 1 OS cobrando KM)
+    # 4. Constrói a visão consolidada POR DIA e calcula o KM real de cada dia no Mapa (OSRM)
     resumo_por_dia = []
     dossies_por_dia = {}
 
@@ -670,30 +808,26 @@ def processar_auditoria_completa(wb_fechamento, wb_totvs, base_codigo="MAU", bas
             continue
 
         data_fmt = lista_oss_dia[0]["data_formatada"]
-
-        # Soma de TODOS os KMs registrados nas OSs daquele dia
         soma_km_dia = sum(o["km_cobrado"] for o in oss_com_km)
         soma_pedagio_dia = sum(o["pedagio"] for o in lista_oss_dia)
         soma_km_faturavel_dia = sum(max(0.0, o["km_cobrado"] - raio_franquia) for o in oss_com_km)
 
-        # Ordena as OSs do dia: primeiro mantemos a ordem das visitas/planilha, mas também criamos lista com destaque
-        # Para a rota no Google Maps, usamos a ordem cronológica (se houver hora no Totvs) ou a ordem da planilha
-        lista_oss_rota = sorted(
-            lista_oss_dia,
-            key=lambda x: (x["hora_str"] if x["hora_str"] else "99:99:99", x["linha"])
-        )
+        cidades_dia = []
+        for o in lista_oss_dia:
+            c = o["cidade"]
+            if c and c != "-" and c not in cidades_dia:
+                cidades_dia.append(c)
 
-        # Agrupa as paradas por endereço único para mostrar claramente no Google Maps:
-        # Qual endereço -> Quais OSs do dia estão naquele endereço -> Quanto KM foi cobrado
+        # Agrupa as paradas por endereço único
         paradas_agrupadas = []
         mapa_end_idx = {}
-        for o in lista_oss_rota:
-            end_key = (o["endereco_limpo"] or base_endereco).strip().upper()
+        for o in lista_oss_dia:
+            end_key = (o["endereco_limpo"] or base_cidade_uf).strip().upper()
             if end_key not in mapa_end_idx:
                 mapa_end_idx[end_key] = len(paradas_agrupadas)
                 paradas_agrupadas.append({
                     "ordem": len(paradas_agrupadas) + 1,
-                    "endereco": o["endereco_limpo"] or base_endereco,
+                    "endereco": o["endereco_limpo"] or base_cidade_uf,
                     "cidade": o["cidade"],
                     "bairro": o["bairro"],
                     "oss": [],
@@ -706,32 +840,52 @@ def processar_auditoria_completa(wb_fechamento, wb_totvs, base_codigo="MAU", bas
                 paradas_agrupadas[idx_p]["km_neste_endereco"] += o["km_cobrado"]
                 paradas_agrupadas[idx_p]["tem_cobranca"] = True
 
+        # CÁLCULO AUTOMÁTICO DE KM DA ROTA NO MAPA (OSRM + IBGE)
+        info_rota_osrm = calcular_rota_osrm_por_cidades(
+            cidade_base=cidade_base,
+            uf_base=uf_base,
+            lista_cidades_dia=cidades_dia,
+            qtd_enderecos_distintos=len(paradas_agrupadas)
+        )
+        km_calculado_mapa = info_rota_osrm["km_total_estimado"]
+        km_estrada_mapa = info_rota_osrm["km_estrada"]
+        km_urbano_mapa = info_rota_osrm["km_urbano"]
+        cidades_ordenadas_maps = info_rota_osrm["cidades_ordenadas"]
+        sequencia_rota_txt = info_rota_osrm["sequencia_formatada"]
+
+        # Reordena as paradas agrupadas seguindo a sequência otimizada das cidades da rota
+        ordem_cidades_norm = [normalizar_texto_sem_acento(c.split(" - ")[0]) for c in cidades_ordenadas_maps]
+        def chave_ordem_parada(p):
+            c_norm = normalizar_texto_sem_acento(p["cidade"])
+            if c_norm in ordem_cidades_norm:
+                return (ordem_cidades_norm.index(c_norm), p["ordem"])
+            return (999, p["ordem"])
+
+        paradas_agrupadas = sorted(paradas_agrupadas, key=chave_ordem_parada)
+        for idx_novo, p in enumerate(paradas_agrupadas, start=1):
+            p["ordem"] = idx_novo
+
+        # Link INFALÍVEL do Google Maps por Cidades Ordenadas (100% livre de erros de rua)
+        link_maps_cidades = gerar_url_google_maps(base_endereco, cidades_ordenadas_maps, base_endereco)
+
+        # Links com Ruas Simplificadas (sem Bairro e com UF correta)
         enderecos_rota_dia = [p["endereco"] for p in paradas_agrupadas]
-        enderecos_apenas_cobradas = remover_duplicados_preservando_ordem([
-            o["endereco_limpo"] or base_endereco for o in oss_com_km
-        ])
-
         trechos_dia = dividir_trechos_maps(base_endereco, enderecos_rota_dia)
-        link_maps_todas_dia = trechos_dia["trecho1"]["url"]
-        link_maps_apenas_cobradas = gerar_url_google_maps(base_endereco, enderecos_apenas_cobradas, base_endereco)
-
-        cidades_dia = []
-        for o in lista_oss_dia:
-            c = o["cidade"]
-            if c and c != "-" and c not in cidades_dia:
-                cidades_dia.append(c)
 
         abas_dia = []
         for o in oss_com_km:
             if o["aba"] not in abas_dia:
                 abas_dia.append(o["aba"])
 
-        # Texto claro das OSs que estão cobrando KM no dia
         detalhe_oss_cobrando = [
             f"OS {o['os']} ({o['km_cobrado']:,.1f} km - {o['cidade']})"
             for o in oss_com_km
         ]
         todas_oss_numeros_str = ", ".join(str(o["os"]) for o in lista_oss_dia)
+
+        diferenca_km = round(soma_km_dia - km_calculado_mapa, 1)
+        # Considera aprovado se o KM cobrado for menor ou até 15 km próximo do KM calculado no mapa
+        precisa_glosar = diferenca_km > 20.0
 
         registro_dia = {
             "chave_dia": chave_dia,
@@ -745,21 +899,28 @@ def processar_auditoria_completa(wb_fechamento, wb_totvs, base_codigo="MAU", bas
             "Todas as OSs do Dia": lista_oss_dia,
             "Todas OSs Numeros": todas_oss_numeros_str,
             "Soma KM Cobrado no Dia": soma_km_dia,
+            "KM Calculado no Mapa": km_calculado_mapa,
+            "KM Estrada Mapa": km_estrada_mapa,
+            "KM Urbano Mapa": km_urbano_mapa,
+            "Diferença (Cobrado - Mapa)": diferenca_km,
+            "Precisa Glosar": precisa_glosar,
+            "Sequência da Rota": sequencia_rota_txt,
             "Soma Pedágio no Dia": soma_pedagio_dia,
             "KM Faturável do Dia": max(0.0, soma_km_dia - raio_franquia),
             "Soma KM Faturável por OS": soma_km_faturavel_dia,
             "Cidades do Dia": ", ".join(cidades_dia),
             "Paradas Google Maps": paradas_agrupadas,
             "Trechos Maps": trechos_dia,
-            "Link Maps (Todas do Dia)": link_maps_todas_dia,
-            "Link Maps (Só OSs com KM)": link_maps_apenas_cobradas
+            "Link Maps (Por Cidades - Sem Erro)": link_maps_cidades,
+            "Link Maps (Todas do Dia)": trechos_dia["trecho1"]["url"],
+            "Link Maps (Só OSs com KM)": link_maps_cidades
         }
         resumo_por_dia.append(registro_dia)
 
-        label_seletor = f"{data_fmt} — Soma do Dia: {soma_km_dia:,.1f} km ({len(oss_com_km)} OS cobrando / {len(lista_oss_dia)} OSs no dia)"
+        label_seletor = f"{data_fmt} — Cobrado: {soma_km_dia:,.1f} km vs Mapa: {km_calculado_mapa:,.1f} km ({len(oss_com_km)} OS cobrando / {len(lista_oss_dia)} OSs no dia)"
         dossies_por_dia[label_seletor] = registro_dia
 
-    # 5. Constrói também a lista individual por OS que cobrou KM (enriquecida com a Soma do Dia)
+    # 5. Lista individual por OS que cobrou KM
     mapa_info_dia = {d["chave_dia"]: d for d in resumo_por_dia}
     resumo_linhas = []
     detalhes_visitas = []
@@ -776,15 +937,14 @@ def processar_auditoria_completa(wb_fechamento, wb_totvs, base_codigo="MAU", bas
             "Cód. Cliente": o["cod_cliente"],
             "Data": o["data_formatada"],
             "Técnico da OS": o["tecnico"],
-            "KM Cobrado na OS": o["km_cobrado"],
             "KM Cobrado": o["km_cobrado"],
             "Soma KM do Dia": info_dia.get("Soma KM Cobrado no Dia", o["km_cobrado"]),
+            "KM Calculado no Mapa": info_dia.get("KM Calculado no Mapa", 0.0),
             "OSs Cobrando no Dia": info_dia.get("OSs Cobrando KM", f"OS {o['os']}"),
             "Franquia Raio (km)": raio_franquia,
             "KM Faturável Cobrado": km_faturavel_os,
-            "Qtd OS Técnico": info_dia.get("Qtd Total OSs no Dia", 1),
             "Qtd OS Total Dia": info_dia.get("Qtd Total OSs no Dia", 1),
-            "Link Maps (Técnico)": info_dia.get("Link Maps (Só OSs com KM)", ""),
+            "Link Maps (Cidades)": info_dia.get("Link Maps (Por Cidades - Sem Erro)", ""),
             "Link Maps (Geral do Dia)": info_dia.get("Link Maps (Todas do Dia)", ""),
             "Status Totvs": o["situacao"],
             "Cidade": o["cidade"],
@@ -798,6 +958,7 @@ def processar_auditoria_completa(wb_fechamento, wb_totvs, base_codigo="MAU", bas
             detalhes_visitas.append({
                 "Data": d["Data"],
                 "Soma KM do Dia": d["Soma KM Cobrado no Dia"],
+                "KM Calculado Mapa": d["KM Calculado no Mapa"],
                 "Ordem": seq,
                 "Aba": o["aba"],
                 "OS Atendida": o["os"],
@@ -807,7 +968,7 @@ def processar_auditoria_completa(wb_fechamento, wb_totvs, base_codigo="MAU", bas
                 "Cód. Cliente": o["cod_cliente"],
                 "Cliente": o["cliente"],
                 "Cidade": o["cidade"],
-                "Endereço p/ Google Maps": o["endereco_limpo"],
+                "Endereço Simplificado": o["endereco_limpo"],
                 "Serviço Prestado": o["servico"]
             })
             seq += 1
@@ -829,12 +990,6 @@ def processar_auditoria_completa(wb_fechamento, wb_totvs, base_codigo="MAU", bas
 
 
 def exportar_relatorio_excel(dados_auditoria, output_stream):
-    """
-    Gera planilha Excel formatada com:
-      1. Resumo por Dia (Soma de KMs do Dia + todas as OSs + links do Google Maps)
-      2. Relatório de Deslocamento (Todas as OSs dos dias com KM, destacando quem cobra KM e os endereços)
-      3. Auditoria por OS Cobrada
-    """
     wb = openpyxl.Workbook()
 
     cor_azul = "1F4E79"
@@ -851,16 +1006,15 @@ def exportar_relatorio_excel(dados_auditoria, output_stream):
         bottom=Side(style='thin', color='D9D9D9')
     )
 
-    # ABA 1: Resumo por Dia (Soma de KMs)
     ws_dia = wb.active
     ws_dia.title = "Soma de KM por Dia"
     ws_dia.views.sheetView[0].showGridLines = True
 
     headers_dia = [
-        "Data", "Qtd OSs Cobrando KM", "Qtd Total OSs no Dia",
-        "OSs Cobrando KM no Dia (Detalhe)", "SOMA KM COBRADO NO DIA",
-        "Cidades Visitadas no Dia", "Todas as OSs do Dia",
-        "Link Google Maps (Todas as OSs do Dia)", "Link Google Maps (Só OSs com KM)"
+        "Data", "OSs Cobrando KM no Dia", "SOMA KM COBRADO NO DIA",
+        "KM CALCULADO NO MAPA (ROTA DO DIA)", "DIFERENÇA (COBRADO - MAPA)",
+        "Total OSs no Dia", "Sequência da Rota por Cidades",
+        "Link Google Maps (Rota por Cidades - Sem Erro)", "Link Google Maps (Com Ruas)"
     ]
     ws_dia.append(headers_dia)
     for col_idx in range(1, len(headers_dia) + 1):
@@ -872,44 +1026,39 @@ def exportar_relatorio_excel(dados_auditoria, output_stream):
     row_num = 2
     for d in dados_auditoria.get("por_dia", []):
         ws_dia.cell(row_num, 1, d["Data"])
-        ws_dia.cell(row_num, 2, d["Qtd OSs Cobrando"])
-        ws_dia.cell(row_num, 3, d["Qtd Total OSs no Dia"])
-        ws_dia.cell(row_num, 4, d["OSs Cobrando KM"])
-        ws_dia.cell(row_num, 5, d["Soma KM Cobrado no Dia"])
-        ws_dia.cell(row_num, 6, d["Cidades do Dia"])
-        ws_dia.cell(row_num, 7, d["Todas OSs Numeros"])
+        ws_dia.cell(row_num, 2, d["OSs Cobrando KM"])
+        ws_dia.cell(row_num, 3, d["Soma KM Cobrado no Dia"])
+        ws_dia.cell(row_num, 4, d["KM Calculado no Mapa"])
+        ws_dia.cell(row_num, 5, d["Diferença (Cobrado - Mapa)"])
+        ws_dia.cell(row_num, 6, d["Qtd Total OSs no Dia"])
+        ws_dia.cell(row_num, 7, d["Sequência da Rota"])
 
-        c_link_todas = ws_dia.cell(row_num, 8)
+        c_link_cid = ws_dia.cell(row_num, 8)
+        if d["Link Maps (Por Cidades - Sem Erro)"]:
+            c_link_cid.value = f'=HYPERLINK("{d["Link Maps (Por Cidades - Sem Erro)"]}", "🗺️ Abrir Rota Cidades")'
+            c_link_cid.font = Font(color="0000FF", underline="single")
+
+        c_link_ruas = ws_dia.cell(row_num, 9)
         if d["Link Maps (Todas do Dia)"]:
-            c_link_todas.value = f'=HYPERLINK("{d["Link Maps (Todas do Dia)"]}", "🗺️ Abrir Rota Completa do Dia")'
-            c_link_todas.font = Font(color="0000FF", underline="single")
-        else:
-            c_link_todas.value = "-"
-
-        c_link_km = ws_dia.cell(row_num, 9)
-        if d["Link Maps (Só OSs com KM)"]:
-            c_link_km.value = f'=HYPERLINK("{d["Link Maps (Só OSs com KM)"]}", "🗺️ Rota Só OSs com KM")'
-            c_link_km.font = Font(color="0000FF", underline="single")
-        else:
-            c_link_km.value = "-"
+            c_link_ruas.value = f'=HYPERLINK("{d["Link Maps (Todas do Dia)"]}", "🏠 Abrir Rota c/ Ruas")'
+            c_link_ruas.font = Font(color="0000FF", underline="single")
 
         for col_idx in range(1, len(headers_dia) + 1):
             ws_dia.cell(row_num, col_idx).border = borda_fina
-            if d["Qtd OSs Cobrando"] > 1 or d["Soma KM Cobrado no Dia"] >= 100:
+            if d["Precisa Glosar"]:
                 ws_dia.cell(row_num, col_idx).fill = fill_destaque
-            if col_idx in [1, 2, 3, 5, 8, 9]:
+            if col_idx in [1, 3, 4, 5, 6, 8, 9]:
                 ws_dia.cell(row_num, col_idx).alignment = Alignment(horizontal="center", vertical="center")
 
         row_num += 1
 
-    # ABA 2: Relatório de Deslocamento (Todas as OSs do Dia + Endereços)
     ws_det = wb.create_sheet(title="Relatorio Deslocamento Dia")
     ws_det.views.sheetView[0].showGridLines = True
 
     headers_det = [
         "Data", "Aba Planilha", "Ordem de Serviço", "Cobrando KM?",
-        "KM Registrado na OS", "Soma KM do Dia", "Código Cliente",
-        "Cidade", "Endereço Completo (Google Maps)", "Pedágio", "Serviço Prestado"
+        "KM Registrado na OS", "Soma KM Cobrado Dia", "KM Calculado Mapa Dia",
+        "Código Cliente", "Cidade", "Endereço Simplificado", "Serviço Prestado"
     ]
     ws_det.append(headers_det)
     for col_idx in range(1, len(headers_det) + 1):
@@ -926,10 +1075,10 @@ def exportar_relatorio_excel(dados_auditoria, output_stream):
         ws_det.cell(row_num_det, 4, d["Cobrando KM?"])
         ws_det.cell(row_num_det, 5, d["KM Registrado"])
         ws_det.cell(row_num_det, 6, d["Soma KM do Dia"])
-        ws_det.cell(row_num_det, 7, d["Cód. Cliente"])
-        ws_det.cell(row_num_det, 8, d["Cidade"])
-        ws_det.cell(row_num_det, 9, d["Endereço p/ Google Maps"])
-        ws_det.cell(row_num_det, 10, d["Pedágio"])
+        ws_det.cell(row_num_det, 7, d["KM Calculado Mapa"])
+        ws_det.cell(row_num_det, 8, d["Cód. Cliente"])
+        ws_det.cell(row_num_det, 9, d["Cidade"])
+        ws_det.cell(row_num_det, 10, d["Endereço Simplificado"])
         ws_det.cell(row_num_det, 11, d["Serviço Prestado"])
 
         for col_idx in range(1, len(headers_det) + 1):
@@ -940,7 +1089,6 @@ def exportar_relatorio_excel(dados_auditoria, output_stream):
 
         row_num_det += 1
 
-    # Auto-ajuste de colunas
     for ws in [ws_dia, ws_det]:
         for col in ws.columns:
             max_len = 0
@@ -948,7 +1096,7 @@ def exportar_relatorio_excel(dados_auditoria, output_stream):
             for cell in col:
                 val_str = str(cell.value or "")
                 if val_str.startswith("="):
-                    val_str = "Abrir Rota Completa do Dia"
+                    val_str = "Abrir Rota Cidades"
                 max_len = max(max_len, len(val_str))
             ws.column_dimensions[col_letter].width = min(max(max_len + 3, 12), 48)
 

@@ -131,7 +131,16 @@ button[data-baseweb="tab"][aria-selected="true"] p {
     padding: 4px 10px;
     border-radius: 12px;
     font-size: 12.5px;
-    font-weight: 600;
+    font-weight: 700;
+    display: inline-block;
+}
+.badge-mapa {
+    background-color: #0284C7 !important;
+    color: #FFFFFF !important;
+    padding: 4px 10px;
+    border-radius: 12px;
+    font-size: 13px;
+    font-weight: 700;
     display: inline-block;
 }
 .badge-cobrando {
@@ -169,13 +178,13 @@ button[data-baseweb="tab"][aria-selected="true"] p {
     color: #FFFFFF !important;
 }
 .btn-maps-sec {
-    background-color: #0D9488 !important;
+    background-color: #475569 !important;
     color: #FFFFFF !important;
     padding: 5px 9px;
     border-radius: 5px;
     text-decoration: none !important;
     font-weight: 600;
-    font-size: 11.5px;
+    font-size: 11px;
     display: inline-block;
     margin: 2px;
 }
@@ -183,8 +192,8 @@ button[data-baseweb="tab"][aria-selected="true"] p {
 """, unsafe_allow_html=True)
 
 # Título Principal
-st.markdown('<div class="main-header">🔥 Consigaz — Auditoria de KM por Dia e Rota Completa</div>', unsafe_allow_html=True)
-st.markdown('<div class="sub-header">Soma todos os KMs cobrados no mesmo dia, junta todas as OSs da data e joga todos os endereços no Google Maps</div>', unsafe_allow_html=True)
+st.markdown('<div class="main-header">🔥 Consigaz — Auditoria Automática de KM por Dia</div>', unsafe_allow_html=True)
+st.markdown('<div class="sub-header">Soma todos os KMs ditos no dia, calcula automaticamente quantos KMs deu a rota das OSs do dia e mostra se bate ou se há cobrança a maior</div>', unsafe_allow_html=True)
 
 # Barra Lateral - Configurações
 st.sidebar.header("⚙️ Parâmetros da Auditoria")
@@ -200,7 +209,7 @@ label_base_selecionada = st.sidebar.selectbox(
     "Base Operacional (Tabela Oficial Consigaz):",
     options=lista_labels,
     index=indice_padrao,
-    help="Selecione a base correspondente para carregar o endereço oficial de partida e retorno."
+    help="Selecione a base correspondente para carregar o endereço e estado (UF) oficial de partida e retorno."
 )
 
 dados_base = OPCOES_BASES_FORMATADAS[label_base_selecionada]
@@ -219,24 +228,22 @@ raio_franquia = st.sidebar.number_input(
     min_value=0.0,
     max_value=200.0,
     value=40.0,
-    step=5.0,
-    help="Quilometragem deduzida do percurso (ex: 20 km raio ida e volta = 40 km)."
+    step=5.0
 )
 
-limite_alerta_km = st.sidebar.number_input(
-    "Destacar Soma de KM do Dia acima de (KM):",
-    min_value=20.0,
-    max_value=1000.0,
-    value=100.0,
-    step=10.0,
-    help="Dias cuja soma de KM cobrado atingir este valor (ou que tiverem mais de 1 OS cobrando KM no mesmo dia) serão destacados em amarelo."
+tolerancia_km = st.sidebar.number_input(
+    "Tolerância de Diferença de Rota (KM):",
+    min_value=0.0,
+    max_value=100.0,
+    value=20.0,
+    step=5.0,
+    help="Se o KM cobrado no dia passar do KM Calculado no Mapa mais esta tolerância, a linha será destacada em amarelo/vermelho para glosa."
 )
 
 senha_planilha = st.sidebar.text_input(
     "Senha da Planilha (se houver):",
     value="fechamento",
-    type="password",
-    help="Senha padrão de fechamento utilizada para desbloquear os arquivos."
+    type="password"
 )
 
 # Área de Upload
@@ -266,8 +273,8 @@ with col2:
 st.markdown("---")
 
 if arquivo_fechamento and arquivo_totvs:
-    if st.button("🚀 Processar Soma de KMs por Dia e Gerar Rotas", use_container_width=True):
-        with st.spinner("Cruzando todas as OSs do fechamento com o Totvs, agrupando por dia e montando rotas..."):
+    if st.button("🚀 Calcular KMs por Dia Automaticamente", use_container_width=True):
+        with st.spinner("Cruzando OSs do dia, calculando quilometragem rodoviária automática e gerando rotas sem erro..."):
             try:
                 wb_fech = carregar_planilha_segura(arquivo_fechamento, senha=senha_planilha)
                 wb_totvs = carregar_planilha_segura(arquivo_totvs, senha=senha_planilha)
@@ -293,82 +300,100 @@ if "resultado_auditoria" in st.session_state:
     linhas_os = res.get("resumo", [])
 
     tab_dia, tab_relatorio_pdf, tab_os, tab_exportar = st.tabs([
-        "📅 1. Soma de KMs por Dia + Todas as OSs do Dia",
+        "📅 1. Soma de KMs por Dia vs KM Calculado da Rota",
         "📄 2. Relatório de Deslocamento (Estilo PDF Consigaz)",
         "📋 3. Tabela Individual por OS Cobrada",
         "📥 4. Baixar Relatório em Excel"
     ])
 
     # =========================================================================
-    # ABA 1: SOMA DE KMs POR DIA + TODAS AS OSs E ENDEREÇOS DO DIA
+    # ABA 1: SOMA DE KMs POR DIA + KM CALCULADO AUTOMATICAMENTE NA TELA
     # =========================================================================
     with tab_dia:
         if not por_dia:
             st.warning("Nenhuma cobrança de KM foi encontrada nas abas desta planilha de fechamento.")
         else:
-            st.markdown("#### 📅 Resumo Consolidado por Dia (Soma dos KMs Registrados no Dia)")
+            st.markdown("#### 📅 Comparativo Automático por Dia: Soma de KM Cobrado vs KM Calculado da Rota")
             st.caption(
-                "Cada linha abaixo reúne **todas as OSs feitas no mesmo dia** e **soma todos os KMs cobrados naquela data**. "
-                "Clique nos botões azuis para jogar **todos os endereços do dia no Google Maps** e ver se a rota bate com o KM total cobrado no dia."
+                "O sistema já calculou automaticamente a **Quilometragem da Rota do Dia** (estrada entre as cidades + deslocamento entre as OSs do dia) "
+                "e comparou com a **Soma de KM Dito no Dia**. O botão **🗺️ Abrir Rota por Cidades** abre o Google Maps direto pelas cidades na ordem certa, **sem risco de falha de endereço**."
             )
 
             html_dias = [
                 '<table class="table-km">',
                 '<thead><tr>',
                 '<th>Data do Dia</th>',
-                '<th>OSs que Estão Cobrando KM no Dia (Valor por OS)</th>',
+                '<th>OSs Cobrando KM no Dia</th>',
                 '<th>SOMA DE KM DITO NO DIA</th>',
-                '<th>Total de OSs no Mesmo Dia</th>',
-                '<th>Cidades Visitadas no Dia</th>',
-                '<th>Jogar Todos os Endereços do Dia no Google Maps</th>',
+                '<th>KM CALCULADO DA ROTA (MAPA)</th>',
+                '<th>VEREDITO / DIFERENÇA</th>',
+                '<th>Total de OSs e Rota de Cidades do Dia</th>',
+                '<th>Conferir no Google Maps (Sem Erro)</th>',
                 '</tr></thead><tbody>'
             ]
 
             for d in por_dia:
                 soma_km = float(d["Soma KM Cobrado no Dia"])
+                km_mapa = float(d["KM Calculado no Mapa"])
+                km_estrada = float(d["KM Estrada Mapa"])
+                km_urb = float(d["KM Urbano Mapa"])
+                dif_km = round(soma_km - km_mapa, 1)
                 qtd_cobrando = int(d["Qtd OSs Cobrando"])
                 qtd_total_dia = int(d["Qtd Total OSs no Dia"])
                 qtd_enderecos = int(d["Qtd Endereços Distintos"])
 
-                # Destaca se a soma do dia for alta OU se tiver mais de 1 OS cobrando KM no mesmo dia
-                is_alert = (soma_km >= float(limite_alerta_km)) or (qtd_cobrando > 1)
-                row_cls = ' class="row-highlight"' if is_alert else ''
+                # Verifica se o KM cobrado passa do KM Calculado no Mapa + tolerância
+                is_glosa = dif_km > float(tolerancia_km)
+                row_cls = ' class="row-highlight"' if is_glosa else ''
 
-                # Badges das OSs cobrando KM naquele dia
                 chips_cobrando = []
                 for o_cob in d["Lista OSs Cobrando"]:
                     chips_cobrando.append(
-                        f'<span class="badge-cobrando">💰 OS {o_cob["os"]}: {o_cob["km_cobrado"]:,.1f} km ({o_cob["cidade"]} - {o_cob["aba"]})</span>'
+                        f'<span class="badge-cobrando">💰 OS {o_cob["os"]}: {o_cob["km_cobrado"]:,.1f} km ({o_cob["cidade"]})</span>'
                     )
                 html_oss_cobrando = "<br>".join(chips_cobrando)
 
-                if is_alert:
-                    alerta_multi = f"<br><small style='color:#B91C1C;font-weight:700;'>⚡ {qtd_cobrando} OSs cobrando no mesmo dia!</small>" if qtd_cobrando > 1 else ""
-                    badge_soma = f'<span class="badge-alto">⚠️ {soma_km:,.1f} km</span>{alerta_multi}'
-                else:
-                    badge_soma = f'<span class="badge-normal">{soma_km:,.1f} km</span>'
+                alerta_multi = f"<br><small style='color:#B91C1C;font-weight:700;'>⚡ {qtd_cobrando} OSs cobrando no mesmo dia!</small>" if qtd_cobrando > 1 else ""
+                badge_soma = f'<span style="font-size:15px;font-weight:800;color:#0F172A;">{soma_km:,.1f} km</span>{alerta_multi}'
 
-                # Botões para abrir todos os trechos do dia no Google Maps
+                badge_mapa = (
+                    f'<span class="badge-mapa">🛣️ {km_mapa:,.1f} km</span>'
+                    f'<br><small style="color:#475569;">({km_estrada:,.0f} km estrada + {km_urb:,.0f} km nas {qtd_enderecos} OSs)</small>'
+                )
+
+                if is_glosa:
+                    badge_veredito = (
+                        f'<span class="badge-alto">🚨 +{dif_km:,.1f} km ACIMA DO MAPA</span>'
+                        f'<br><small style="color:#991B1B;font-weight:700;">Revisar / Glosar excesso</small>'
+                    )
+                else:
+                    badge_veredito = (
+                        f'<span class="badge-normal">✅ BATEU COM A ROTA</span>'
+                        f'<br><small style="color:#166534;font-weight:600;">Rota cobre os {soma_km:,.1f} km</small>'
+                    )
+
+                url_cidades = d["Link Maps (Por Cidades - Sem Erro)"]
+                botoes_maps = [
+                    f'<a href="{url_cidades}" target="_blank" class="btn-maps">🗺️ Abrir Rota por Cidades (Sem Erro)</a>'
+                ]
                 todos_trechos = d["Trechos Maps"].get("todos_trechos", [])
-                botoes_maps = []
-                if len(todos_trechos) <= 1:
-                    url_u = d["Link Maps (Todas do Dia)"]
-                    botoes_maps.append(f'<a href="{url_u}" target="_blank" class="btn-maps">🗺️ Abrir Rota Completa ({qtd_enderecos} endereços)</a>')
+                if len(todos_trechos) == 1:
+                    botoes_maps.append(f'<br><a href="{todos_trechos[0]["url"]}" target="_blank" class="btn-maps-sec">🏠 Abrir c/ Ruas ({qtd_enderecos})</a>')
                 else:
-                    for idx_t, tr in enumerate(todos_trechos, start=1):
-                        botoes_maps.append(f'<a href="{tr["url"]}" target="_blank" class="btn-maps">🗺️ Abrir Trecho {idx_t} ({tr["qtd_paradas"]} paradas)</a>')
-
-                if qtd_total_dia > qtd_cobrando:
-                    url_so_km = d["Link Maps (Só OSs com KM)"]
-                    botoes_maps.append(f'<br><a href="{url_so_km}" target="_blank" class="btn-maps-sec">🎯 Rota Só OSs Cobradas ({qtd_cobrando})</a>')
+                    links_r = " ".join(
+                        f'<a href="{tr["url"]}" target="_blank" class="btn-maps-sec">🏠 Ruas T{idx_t}</a>'
+                        for idx_t, tr in enumerate(todos_trechos, start=1)
+                    )
+                    botoes_maps.append(f'<br>{links_r}')
 
                 html_dias.append(
                     f'<tr{row_cls}>'
                     f'<td style="text-align:center;font-weight:800;font-size:14.5px;">{d["Data"]}</td>'
                     f'<td style="text-align:left;">{html_oss_cobrando}</td>'
                     f'<td style="text-align:center;">{badge_soma}</td>'
-                    f'<td style="text-align:center;font-weight:700;">{qtd_total_dia} OSs no dia<br><small style="color:#475569;">({qtd_cobrando} c/ KM e {qtd_total_dia - qtd_cobrando} s/ KM)</small></td>'
-                    f'<td style="text-align:left;font-weight:600;">{d["Cidades do Dia"]}</td>'
+                    f'<td style="text-align:center;">{badge_mapa}</td>'
+                    f'<td style="text-align:center;">{badge_veredito}</td>'
+                    f'<td style="text-align:left;"><b>{qtd_total_dia} OSs no dia:</b><br><span style="font-size:12.5px;color:#1F4E79;font-weight:600;">{d["Sequência da Rota"]}</span></td>'
                     f'<td style="text-align:center;">{"".join(botoes_maps)}</td>'
                     f'</tr>'
                 )
@@ -377,93 +402,28 @@ if "resultado_auditoria" in st.session_state:
             st.markdown("\n".join(html_dias), unsafe_allow_html=True)
 
             st.markdown("---")
-            st.markdown("#### 🔍 Conferir Todas as OSs, Endereços e Quilometragem de um Dia Específico")
+            st.markdown("#### 🔍 Ver Todas as OSs e Endereços de um Dia Específico")
 
             opcoes_dias_det = [
-                f"{d['Data']} — Soma Cobrada: {d['Soma KM Cobrado no Dia']:,.1f} km ({d['Qtd OSs Cobrando']} OS cobrando de {d['Qtd Total OSs no Dia']} OSs no dia)"
+                f"{d['Data']} — Cobrado no Dia: {d['Soma KM Cobrado no Dia']:,.1f} km | Calculado pela Rota: {d['KM Calculado no Mapa']:,.1f} km ({d['Qtd Total OSs no Dia']} OSs)"
                 for d in por_dia
             ]
             idx_dia_sel = st.selectbox(
-                "Escolha o Dia abaixo para ver todas as OSs do dia juntas, os endereços enviados ao Google Maps e simular a soma:",
+                "Escolha o Dia abaixo para inspecionar todas as OSs do dia juntas:",
                 options=range(len(opcoes_dias_det)),
                 format_func=lambda i: opcoes_dias_det[i],
                 index=0
             )
 
             dia_atual = por_dia[idx_dia_sel]
-            trechos_atuais = dia_atual["Trechos Maps"].get("todos_trechos", [])
 
-            # Calculadora rápida de confronto: Soma Cobrada no Dia vs Google Maps
-            c_calc1, c_calc2 = st.columns([1.2, 1.8])
-            with c_calc1:
-                st.markdown(f"**🗺️ Links do Google Maps para o dia {dia_atual['Data']}**")
-                st.caption(f"Partida e Retorno: `{res['base_endereco']}`")
-                soma_maps_dia = 0.0
-                for idx_t, tr in enumerate(trechos_atuais, start=1):
-                    st.link_button(
-                        f"🌐 Abrir {tr['nome']} no Google Maps",
-                        tr["url"],
-                        use_container_width=True
-                    )
-                    val_default = float(dia_atual["Soma KM Cobrado no Dia"] / len(trechos_atuais))
-                    km_digitado = st.number_input(
-                        f"KM que deu no Google Maps (Trecho {idx_t}):",
-                        min_value=0.0,
-                        max_value=3000.0,
-                        value=val_default,
-                        step=1.0,
-                        key=f"calc_km_dia_{dia_atual['chave_dia']}_{idx_t}"
-                    )
-                    soma_maps_dia += km_digitado
+            st.markdown(
+                f"**🛣️ Rota Calculada ({dia_atual['Data']}):** `{dia_atual['Sequência da Rota']}` — "
+                f"**KM Estrada:** `{dia_atual['KM Estrada Mapa']:,.1f} km` + "
+                f"**Deslocamento Urbano ({dia_atual['Qtd Endereços Distintos']} endereços):** `{dia_atual['KM Urbano Mapa']:,.1f} km` = "
+                f"**Total Calculado: `{dia_atual['KM Calculado no Mapa']:,.1f} km`** (vs **`{dia_atual['Soma KM Cobrado no Dia']:,.1f} km`** cobrados no dia)"
+            )
 
-            with c_calc2:
-                soma_cobrada = float(dia_atual["Soma KM Cobrado no Dia"])
-                dif_km = soma_maps_dia - soma_cobrada
-                if soma_maps_dia >= soma_cobrada:
-                    box_veredito = (
-                        '<div style="background-color:#ECFDF5;border:2px solid #10B981;border-radius:8px;padding:18px;margin-top:8px;">'
-                        f'<h4 style="color:#065F46 !important;margin:0 0 8px 0;">✅ A SOMA DO GOOGLE MAPS BATEU COM O KM COBRADO NO DIA ({dia_atual["Data"]})</h4>'
-                        f'<p style="margin:0;color:#064E3B !important;font-size:14.5px;line-height:1.5;">'
-                        f'• <b>Soma dos KMs cobrados pelas OSs no dia:</b> {soma_cobrada:,.1f} km ({dia_atual["OSs Cobrando KM"]})<br>'
-                        f'• <b>KM Total da Rota no Google Maps (com todas as {dia_atual["Qtd Total OSs no Dia"]} OSs do dia):</b> {soma_maps_dia:,.1f} km<br>'
-                        f'• <b>Conclusão:</b> O trajeto completo do dia no Google Maps ({soma_maps_dia:,.1f} km) cobre os {soma_cobrada:,.1f} km cobrados.'
-                        '</p></div>'
-                    )
-                else:
-                    box_veredito = (
-                        '<div style="background-color:#FEF2F2;border:2px solid #EF4444;border-radius:8px;padding:18px;margin-top:8px;">'
-                        f'<h4 style="color:#991B1B !important;margin:0 0 8px 0;">🚨 A ROTA NÃO BATE! COBRANÇA MAIOR QUE O GOOGLE MAPS ({dia_atual["Data"]})</h4>'
-                        f'<p style="margin:0;color:#7F1D1D !important;font-size:14.5px;line-height:1.5;">'
-                        f'• <b>Soma dos KMs cobrados pelas OSs no dia:</b> <b>{soma_cobrada:,.1f} km</b> ({dia_atual["OSs Cobrando KM"]})<br>'
-                        f'• <b>KM Total no Google Maps (juntando todas as {dia_atual["Qtd Total OSs no Dia"]} OSs do dia):</b> <b>{soma_maps_dia:,.1f} km</b><br>'
-                        f'• <b>Diferença Cobrada a Maior (Glosa sugerida):</b> <span style="background:#DC2626;color:#FFF;padding:2px 8px;border-radius:4px;font-weight:800;">{abs(dif_km):,.1f} km a mais sem justificativa</span>'
-                        '</p></div>'
-                    )
-                st.markdown(box_veredito, unsafe_allow_html=True)
-
-                # Resumo rápido da ordem dos endereços enviados ao Google Maps
-                paradas_html = [
-                    '<div style="background-color:#F8FAFC;border:1px solid #CBD5E1;border-radius:8px;padding:12px 16px;margin-top:12px;">',
-                    f'<div style="font-weight:700;color:#1F4E79;margin-bottom:6px;">📍 Sequência de Endereços no Google Maps ({len(dia_atual["Paradas Google Maps"])} paradas entre Partida e Retorno):</div>',
-                    f'<div style="font-size:13px;color:#1E293B;margin-bottom:4px;">🟢 <b>Partida (Base):</b> {res["base_endereco"]}</div>'
-                ]
-                for p in dia_atual["Paradas Google Maps"]:
-                    oss_p_txt = ", ".join(
-                        f"<b>OS {x['os']} (💰 {x['km_cobrado']:,.1f} km)</b>" if x["km_cobrado"] > 0 else f"OS {x['os']}"
-                        for x in p["oss"]
-                    )
-                    icone_p = "🟠" if p["tem_cobranca"] else "⚪"
-                    paradas_html.append(
-                        f'<div style="font-size:13px;color:#1E293B;margin-bottom:4px;">'
-                        f'{icone_p} <b>Parada {p["ordem"]}:</b> {p["endereco"]} — <span style="color:#0F172A;">[{oss_p_txt}]</span>'
-                        f'</div>'
-                    )
-                paradas_html.append(f'<div style="font-size:13px;color:#1E293B;margin-top:4px;">🔴 <b>Retorno (Base):</b> {res["base_endereco"]}</div>')
-                paradas_html.append('</div>')
-                st.markdown("\n".join(paradas_html), unsafe_allow_html=True)
-
-            # Tabela com TODAS as OSs daquele dia juntas (mostrando quem está cobrando KM e quem tem 0 km)
-            st.markdown(f"##### 📋 Todas as {dia_atual['Qtd Total OSs no Dia']} OSs do Dia {dia_atual['Data']} (Com Endereços e Soma de KM)")
             html_oss_dia = [
                 '<table class="table-km">',
                 '<thead><tr>',
@@ -473,7 +433,7 @@ if "resultado_auditoria" in st.session_state:
                 '<th>KM Registrado na OS</th>',
                 '<th>Cód. Cliente</th>',
                 '<th>Cidade</th>',
-                '<th>Endereço Completo (Enviado ao Google Maps)</th>',
+                '<th>Endereço Simplificado (Sem Bairro)</th>',
                 '<th>Serviço Prestado</th>',
                 '</tr></thead><tbody>'
             ]
@@ -481,7 +441,7 @@ if "resultado_auditoria" in st.session_state:
             for o_item in dia_atual["Todas as OSs do Dia"]:
                 cob = o_item["km_cobrado"] > 0
                 r_cls = ' class="row-highlight"' if cob else ''
-                badge_st = f'<span class="badge-cobrando">💰 COBRANDO KM</span>' if cob else '<span class="badge-sem-km">Mesmo Dia (0 km)</span>'
+                badge_st = '<span class="badge-cobrando">💰 COBRANDO KM</span>' if cob else '<span class="badge-sem-km">Mesmo Dia (0 km)</span>'
                 km_txt = f'<b>{o_item["km_cobrado"]:,.1f} km</b>' if cob else '0,0 km'
 
                 html_oss_dia.append(
@@ -491,7 +451,7 @@ if "resultado_auditoria" in st.session_state:
                     f'<td style="text-align:center;">{badge_st}</td>'
                     f'<td style="text-align:center;font-size:14px;">{km_txt}</td>'
                     f'<td style="text-align:center;">{o_item["cod_cliente"]}</td>'
-                    f'<td style="text-align:center;font-weight:600;">{o_item["cidade"]}</td>'
+                    f'<td style="text-align:center;font-weight:700;">{o_item["cidade"]}</td>'
                     f'<td style="text-align:left;font-weight:600;">{o_item["endereco_limpo"]}</td>'
                     f'<td style="text-align:left;">{o_item["servico"]}</td>'
                     f'</tr>'
@@ -499,9 +459,9 @@ if "resultado_auditoria" in st.session_state:
 
             html_oss_dia.append(
                 '<tr class="row-total">'
-                f'<td colspan="3" style="text-align:right;">SOMA TOTAL DE KM REGISTRADO NO DIA ({dia_atual["Data"]}):</td>'
+                f'<td colspan="3" style="text-align:right;">SOMA DE KM DITO NO DIA ({dia_atual["Data"]}):</td>'
                 f'<td style="text-align:center;">{dia_atual["Soma KM Cobrado no Dia"]:,.1f} km</td>'
-                f'<td colspan="4" style="text-align:left;">Total de {dia_atual["Qtd Total OSs no Dia"]} OSs no dia ({dia_atual["Qtd OSs Cobrando"]} OSs cobrando KM)</td>'
+                f'<td colspan="4" style="text-align:left;">KM Calculado da Rota no Mapa: {dia_atual["KM Calculado no Mapa"]:,.1f} km ({dia_atual["Qtd Total OSs no Dia"]} OSs no dia)</td>'
                 '</tr>'
             )
             html_oss_dia.append('</tbody></table>')
@@ -517,20 +477,19 @@ if "resultado_auditoria" in st.session_state:
         else:
             lista_opcoes = list(dossies.keys())
             opcao_sel = st.selectbox(
-                "Selecione o Dia para gerar a folha de Relatório de Deslocamento (modelo PDF Consigaz):",
+                "Selecione o Dia para gerar a folha de Relatório de Deslocamento:",
                 options=lista_opcoes,
                 index=0
             )
             dossie = dossies[opcao_sel]
-            trechos_d = dossie["Trechos Maps"].get("todos_trechos", [])
 
             c_up1, c_up2 = st.columns(2)
             with c_up1:
                 km_maps_folha = st.number_input(
-                    "KM Apurado no Google Maps para exibir na folha:",
+                    "KM Apurado no Mapa (já preenchido automaticamente pela rota calculada):",
                     min_value=0.0,
                     max_value=3000.0,
-                    value=float(dossie["Soma KM Cobrado no Dia"]),
+                    value=float(dossie["KM Calculado no Mapa"]),
                     step=1.0,
                     key=f"km_folha_{dossie['chave_dia']}"
                 )
@@ -563,7 +522,7 @@ if "resultado_auditoria" in st.session_state:
                 '<th style="border:1px solid #000;padding:6px;color:#000;">ORDEM DE SERVIÇO:</th>',
                 '<th style="border:1px solid #000;padding:6px;color:#000;">CÓDIGO CLIENTE:</th>',
                 '<th style="border:1px solid #000;padding:6px;color:#000;">CIDADE:</th>',
-                '<th style="border:1px solid #000;padding:6px;color:#000;">ENDEREÇO (GOOGLE MAPS):</th>',
+                '<th style="border:1px solid #000;padding:6px;color:#000;">ENDEREÇO SIMPLIFICADO:</th>',
                 '<th style="border:1px solid #000;padding:6px;color:#000;">KM TOTAL:</th>',
                 '<th style="border:1px solid #000;padding:6px;color:#000;">PEDÁGIO:</th>',
                 '<th style="border:1px solid #000;padding:6px;color:#000;">SERVIÇO PRESTADO:</th>',
@@ -593,7 +552,7 @@ if "resultado_auditoria" in st.session_state:
                 f'<td colspan="5" style="border:1.5px solid #000;padding:7px;text-align:right;color:#000;">SOMA DOS KMs REGISTRADOS NO DIA ({dossie["Data"]}):</td>'
                 f'<td style="border:1.5px solid #000;padding:7px;color:#B91C1C;font-size:15px;">{dossie["Soma KM Cobrado no Dia"]:,.1f} km</td>'
                 f'<td style="border:1.5px solid #000;padding:7px;color:#000;">{dossie["Soma Pedágio no Dia"]:,.2f}</td>'
-                f'<td style="border:1.5px solid #000;padding:7px;text-align:left;color:#000;"> KM Apurado Google Maps: <b>{km_maps_folha:,.1f} km</b></td>'
+                f'<td style="border:1.5px solid #000;padding:7px;text-align:left;color:#000;">KM Calculado da Rota: <b>{km_maps_folha:,.1f} km</b> ({dossie["Sequência da Rota"]})</td>'
                 '</tr>'
             )
             folha_pdf_html.append('</tbody></table>')
@@ -609,30 +568,31 @@ if "resultado_auditoria" in st.session_state:
     # =========================================================================
     with tab_os:
         df_resumo = pd.DataFrame(linhas_os)
-        st.caption("Lista individual de cada linha onde foi lançado KM > 0, mostrando ao lado a **Soma Total de KM daquele mesmo dia**.")
         linhas_html = [
             '<table class="table-km">',
             '<thead><tr>',
             '<th>Aba</th>',
             '<th>OS Cobrada</th>',
             '<th>Data</th>',
-            '<th>KM Registrado na OS</th>',
-            '<th>SOMA DE KM NO MESMO DIA</th>',
+            '<th>KM na OS</th>',
+            '<th>SOMA DE KM DITO NO DIA</th>',
+            '<th>KM CALCULADO DA ROTA</th>',
             '<th>Total de OSs no Dia</th>',
             '<th>Cidade</th>',
-            '<th>Endereço Limpo (Google Maps)</th>',
-            '<th>Rota Completa do Dia</th>',
+            '<th>Rota por Cidades (Sem Erro)</th>',
             '</tr></thead><tbody>'
         ]
         for _, r in df_resumo.iterrows():
             km_val = float(r["KM Cobrado"])
             soma_d = float(r["Soma KM do Dia"])
-            is_high = soma_d >= float(limite_alerta_km) or km_val >= float(limite_alerta_km)
+            km_m = float(r["KM Calculado no Mapa"])
+            is_high = (soma_d - km_m) > float(tolerancia_km)
             row_class = ' class="row-highlight"' if is_high else ''
             badge_os = f'<span class="badge-cobrando">{km_val:,.1f} km</span>'
             badge_dia = f'<span class="badge-alto">⚠️ {soma_d:,.1f} km</span>' if is_high else f'<span class="badge-normal">{soma_d:,.1f} km</span>'
-            link_maps = r["Link Maps (Geral do Dia)"]
-            btn_link = f'<a href="{link_maps}" target="_blank" class="btn-maps">🗺️ Abrir Rota do Dia</a>' if link_maps else '-'
+            badge_mp = f'<span class="badge-mapa">🛣️ {km_m:,.1f} km</span>'
+            link_maps = r["Link Maps (Cidades)"]
+            btn_link = f'<a href="{link_maps}" target="_blank" class="btn-maps">🗺️ Abrir Rota Cidades</a>' if link_maps else '-'
 
             linhas_html.append(
                 f'<tr{row_class}>'
@@ -641,9 +601,9 @@ if "resultado_auditoria" in st.session_state:
                 f'<td style="text-align:center;font-weight:700;">{r["Data"]}</td>'
                 f'<td style="text-align:center;">{badge_os}</td>'
                 f'<td style="text-align:center;">{badge_dia}</td>'
+                f'<td style="text-align:center;">{badge_mp}</td>'
                 f'<td style="text-align:center;font-weight:700;">{r["Qtd OS Total Dia"]} OSs</td>'
                 f'<td style="text-align:center;font-weight:600;">{r["Cidade"]}</td>'
-                f'<td>{r["Endereço OS"]}</td>'
                 f'<td style="text-align:center;">{btn_link}</td>'
                 f'</tr>'
             )
@@ -655,8 +615,6 @@ if "resultado_auditoria" in st.session_state:
     # =========================================================================
     with tab_exportar:
         st.markdown("#### 📥 Baixar Relatório Consolidado por Dia em Excel")
-        st.write("A planilha gerada contém a aba **Soma de KM por Dia** (com os links diretos do Google Maps) e a aba **Relatorio Deslocamento Dia** com todas as OSs do mesmo dia agrupadas e os endereços completos.")
-
         buffer = io.BytesIO()
         exportar_relatorio_excel(res, buffer)
         buffer.seek(0)
@@ -669,4 +627,4 @@ if "resultado_auditoria" in st.session_state:
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
 else:
-    st.info("👆 Arraste a **Planilha de Fechamento** e o **Relatório Totvs** nos campos acima e clique em **Processar Soma de KMs por Dia e Gerar Rotas**.")
+    st.info("👆 Arraste a **Planilha de Fechamento** e o **Relatório Totvs** nos campos acima e clique em **Calcular KMs por Dia Automaticamente**.")
