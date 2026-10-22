@@ -261,7 +261,8 @@ def obter_endereco_base(codigo_base):
 def carregar_planilha_segura(file_source, senha="fechamento"):
     """
     Carrega arquivo Excel de arquivo físico ou stream em memória (UploadedFile).
-    Descriptografa com msoffcrypto se houver senha padrão de abertura.
+    Tenta abrir direto e, se protegido, tenta as variações da senha oficial
+    ('fechamento', 'FECHAMENTO', 'Fechamento', ou a senha informada).
     """
     if isinstance(file_source, str):
         with open(file_source, "rb") as f:
@@ -282,17 +283,26 @@ def carregar_planilha_segura(file_source, senha="fechamento"):
         pass
 
     if msoffcrypto:
-        stream.seek(0)
-        try:
-            office_file = msoffcrypto.OfficeFile(stream)
-            if office_file.is_encrypted():
-                decrypted = io.BytesIO()
-                office_file.load_key(password=senha)
-                office_file.decrypt(decrypted)
-                decrypted.seek(0)
-                return openpyxl.load_workbook(decrypted, data_only=True)
-        except Exception:
-            pass
+        senhas_teste = []
+        if senha:
+            for s in [senha, senha.upper(), senha.lower(), senha.capitalize(), "FECHAMENTO", "fechamento", "Fechamento"]:
+                if s not in senhas_teste:
+                    senhas_teste.append(s)
+        else:
+            senhas_teste = ["FECHAMENTO", "fechamento", "Fechamento"]
+
+        for s_tentativa in senhas_teste:
+            stream.seek(0)
+            try:
+                office_file = msoffcrypto.OfficeFile(stream)
+                if office_file.is_encrypted():
+                    decrypted = io.BytesIO()
+                    office_file.load_key(password=s_tentativa)
+                    office_file.decrypt(decrypted)
+                    decrypted.seek(0)
+                    return openpyxl.load_workbook(decrypted, data_only=True)
+            except Exception:
+                continue
 
     stream.seek(0)
     return openpyxl.load_workbook(stream, data_only=True)

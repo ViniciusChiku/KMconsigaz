@@ -242,8 +242,9 @@ tolerancia_km = st.sidebar.number_input(
 
 senha_planilha = st.sidebar.text_input(
     "Senha da Planilha (se houver):",
-    value="fechamento",
-    type="password"
+    value="FECHAMENTO",
+    type="password",
+    help="Senha padrão de fechamento utilizada para desbloquear os arquivos (testa FECHAMENTO e fechamento automaticamente)."
 )
 
 # Área de Upload
