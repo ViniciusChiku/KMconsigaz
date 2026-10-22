@@ -1,5 +1,6 @@
 import io
 import os
+import textwrap
 import streamlit as st
 import pandas as pd
 from datetime import datetime
@@ -484,7 +485,7 @@ if "resultado_auditoria" in st.session_state:
                         f'</tr>'
                     )
 
-                card_html = f"""
+                card_html = textwrap.dedent(f"""
                 <div class="card-dia">
                     <div class="card-dia-header">
                         <div>
@@ -548,8 +549,12 @@ if "resultado_auditoria" in st.session_state:
                         </table>
                     </div>
                 </div>
-                """
-                st.markdown(card_html, unsafe_allow_html=True)
+                """).strip()
+
+                if hasattr(st, "html"):
+                    st.html(card_html)
+                else:
+                    st.markdown(card_html, unsafe_allow_html=True)
 
                 with st.expander(f"📸 Conferir Prints ou Ajustar KM dos Trechos do Dia {d['Data']} (Opcional)"):
                     cols_tr = st.columns(len(todos_trechos))
