@@ -898,6 +898,7 @@ def processar_auditoria_completa(wb_fechamento, wb_totvs, base_codigo="CAN", bas
 
     for reg in todas_oss_fechamento:
         os_id = reg["os"]
+        encontrada_totvs = os_id in os_dict
         totvs_os = os_dict.get(os_id, {})
 
         dt_str = reg["data_str"] or totvs_os.get("data_str")
@@ -927,6 +928,7 @@ def processar_auditoria_completa(wb_fechamento, wb_totvs, base_codigo="CAN", bas
             "aba": reg["aba"],
             "linha": reg["linha"],
             "os": os_id,
+            "encontrada_totvs": encontrada_totvs,
             "cod_cliente": cod_cliente_final,
             "cliente": nome_cliente_final,
             "cidade": cidade_os.upper() if cidade_os else "-",
@@ -942,7 +944,7 @@ def processar_auditoria_completa(wb_fechamento, wb_totvs, base_codigo="CAN", bas
             "chave_dia": chave_dia,
             "hora_str": totvs_os.get("hora_str") or "",
             "tecnico": totvs_os.get("tecnico") or "Não identificado",
-            "situacao": totvs_os.get("situacao") or "Atendida",
+            "situacao": totvs_os.get("situacao") or ("Atendida" if encontrada_totvs else "Não localizada no Totvs"),
             "total_pago": reg["total_pago"]
         }
         oss_enriquecidas.append(item_completo)

@@ -485,6 +485,13 @@ if "resultado_auditoria" in st.session_state:
                     badge_st = f'<span class="badge-cobrando">💰 {o_item["km_cobrado"]:,.1f} km</span>' if cob else '<span class="badge-sem-km">0 km</span>'
                     end_rua_formatado = o_item["endereco_limpo"]
 
+                    # Aviso se a OS não constava no Totvs
+                    if not o_item.get("encontrada_totvs", True):
+                        tag_totvs = '<br><span style="color:#B45309;font-size:10.5px;font-weight:700;background:#FEF3C7;padding:1px 5px;border-radius:4px;border:1px solid #FCD34D;" title="Esta OS foi informada no Fechamento mas não foi localizada no relatório Totvs extraído. O sistema utilizou os dados da própria planilha de fechamento.">⚠️ Não consta no Totvs</span>'
+                        end_rua_formatado = f"{end_rua_formatado} <small style='color:#64748B;'>(Origem: Fechamento)</small>"
+                    else:
+                        tag_totvs = ""
+
                     t_num = 1
                     if len(todos_trechos) > 1:
                         t_num = 1 if idx_ordem <= len(todos_trechos[0].get("paradas", [])) else 2
@@ -492,7 +499,7 @@ if "resultado_auditoria" in st.session_state:
                     html_linhas_tabela.append(
                         f'<tr{r_cls}>'
                         f'<td style="text-align:center;font-weight:700;">{idx_ordem}</td>'
-                        f'<td style="text-align:center;font-weight:800;font-size:13.5px;color:#1F4E79;">OS {o_item["os"]}</td>'
+                        f'<td style="text-align:center;font-weight:800;font-size:13.5px;color:#1F4E79;">OS {o_item["os"]}{tag_totvs}</td>'
                         f'<td style="text-align:center;">{badge_st}</td>'
                         f'<td style="text-align:left;font-weight:700;color:#0F172A;font-size:13px;">🏠 {end_rua_formatado}</td>'
                         f'<td style="text-align:center;font-weight:600;color:#1E293B;">{o_item["cidade"]}</td>'
