@@ -873,10 +873,11 @@ def gerar_url_google_maps(origem, paradas, destino=None):
     return "https://www.google.com/maps/dir/" + "/".join(enc_partes)
 
 
-def processar_auditoria_completa(wb_fechamento, wb_totvs, base_codigo="CAN", base_endereco_custom=None, raio_franquia=40.0):
+def processar_auditoria_completa(wb_fechamento, wb_totvs, base_codigo="CAN", base_endereco_custom=None, raio_franquia=0.0, tolerancia_km=40.0):
     """
     Executa o cruzamento completo, agrupa por dia, soma os KMs registrados no dia
     e calcula automaticamente a quilometragem real da rota (via OSRM + IBGE).
+    Aplica a margem de tolerância aceitável informada pelo usuário (padrão 40 km).
     """
     info_base = obter_info_base(base_codigo)
     uf_base = info_base["uf"]
@@ -1063,8 +1064,8 @@ def processar_auditoria_completa(wb_fechamento, wb_totvs, base_codigo="CAN", bas
         todas_oss_numeros_str = ", ".join(str(o["os"]) for o in lista_oss_dia)
 
         diferenca_km = round(soma_km_dia - km_final_mapa, 1)
-        # Considera aprovado se o KM cobrado for menor ou tolerado até 20 km
-        precisa_glosar = diferenca_km > 20.0
+        # Considera aprovado se o KM cobrado estiver dentro da margem de erro/tolerância permitida
+        precisa_glosar = diferenca_km > float(tolerancia_km)
 
         # Texto detalhado dos trechos (ex: T1: 415 km + T2: 194 km)
         txt_trechos_km = " + ".join(f"T{i}: {k:,.0f} km" for i, k in enumerate(kms_trechos_lista, 1))

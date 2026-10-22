@@ -284,22 +284,24 @@ endereco_partida = st.sidebar.text_area(
     help="Endereço oficial da Base Consigaz utilizado como ponto inicial e final da rota."
 )
 
-raio_franquia = st.sidebar.number_input(
-    "Franquia Contratual / Raio (KM):",
+tolerancia_km = st.sidebar.number_input(
+    "Margem de Erro / Tolerância Aceitável (KM):",
     min_value=0.0,
     max_value=200.0,
     value=40.0,
-    step=5.0
+    step=5.0,
+    help="Margem de erro que você aceita. Exemplo: se você deixar 40 km, numa OS o técnico cobra 300 km e no Maps der 270 km (diferença de 30 km), ele é aprovado automaticamente!"
 )
 
-tolerancia_km = st.sidebar.number_input(
-    "Tolerância de Diferença de Rota (KM):",
-    min_value=0.0,
-    max_value=100.0,
-    value=20.0,
-    step=5.0,
-    help="Se o KM cobrado no dia passar do KM Calculado no Mapa mais esta tolerância, a linha será destacada em amarelo/vermelho para glosa."
-)
+with st.sidebar.expander("⚙️ Franquia Contratual (Opcional)", expanded=False):
+    raio_franquia = st.number_input(
+        "Franquia de Raio (KM):",
+        min_value=0.0,
+        max_value=200.0,
+        value=0.0,
+        step=5.0,
+        help="Deixe em 0 km se você paga o KM cheio. Ajuste apenas se o contrato do prestador descontar um raio gratuito inicial para pagamento."
+    )
 
 senha_planilha = st.sidebar.text_input(
     "Senha da Planilha (se houver):",
@@ -346,7 +348,8 @@ if arquivo_fechamento and arquivo_totvs:
                     wb_totvs=wb_totvs,
                     base_codigo=base_selecionada,
                     base_endereco_custom=endereco_partida,
-                    raio_franquia=float(raio_franquia)
+                    raio_franquia=float(raio_franquia),
+                    tolerancia_km=float(tolerancia_km)
                 )
 
                 st.session_state["resultado_auditoria"] = resultado
@@ -426,15 +429,19 @@ if "resultado_auditoria" in st.session_state:
                 lista_oss_dia = d["Todas as OSs do Dia"]
                 oss_com_km = d["Lista OSs Cobrando"]
 
+                margem_aceita = float(d.get("Tolerancia KM", tolerancia_km))
                 if is_glosa:
-                    badge_veredito = f'<span class="badge-alto">🚨 +{dif_km:,.1f} km ACIMA DO MAPA (Revisar / Glosar)</span>'
+                    excesso = round(dif_km - margem_aceita, 1)
+                    badge_veredito = f'<span class="badge-alto">🚨 EXCEDEU A MARGEM (+{dif_km:,.1f} km acima do Maps)</span>'
                     cor_dif = "#DC2626"
-                    status_folga = f'<span style="color:#DC2626;font-weight:700;">Excedeu o cálculo em +{dif_km:,.1f} km</span>'
+                    status_folga = f'<span style="color:#DC2626;font-weight:700;">Cobrou +{dif_km:,.1f} km acima do Maps. Ultrapassou a margem de {margem_aceita:,.0f} km em <b>+{excesso:,.1f} km</b>.</span>'
                 else:
-                    folga_km = abs(dif_km)
-                    badge_veredito = f'<span class="badge-normal">✅ BATEU COM AS RUAS (Folga de {folga_km:,.1f} km)</span>'
+                    badge_veredito = f'<span class="badge-normal">✅ APROVADO (Dentro da margem de {margem_aceita:,.0f} km)</span>'
                     cor_dif = "#16A34A"
-                    status_folga = f'<span style="color:#16A34A;font-weight:700;">Rota cobre com folga de {folga_km:,.1f} km</span>'
+                    if dif_km <= 0:
+                        status_folga = f'<span style="color:#16A34A;font-weight:700;">Rota do Maps cobre totalmente a cobrança com folga de {abs(dif_km):,.1f} km.</span>'
+                    else:
+                        status_folga = f'<span style="color:#16A34A;font-weight:700;">Cobrou +{dif_km:,.1f} km acima do Maps, mas está <b>APROVADO</b> (dentro da margem de {margem_aceita:,.0f} km).</span>'
 
                 chips_cobrando = []
                 for o_cob in oss_com_km:
