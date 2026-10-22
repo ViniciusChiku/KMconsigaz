@@ -313,10 +313,8 @@ senha_planilha = st.sidebar.text_input(
 st.sidebar.markdown("---")
 st.sidebar.markdown(
     """
-    <div style="text-align: center; padding: 12px 8px; background-color: #FFFFFF; border-radius: 8px; border: 1.5px solid #E2E8F0; margin-top: 15px; box-shadow: 0 1px 3px rgba(0,0,0,0.04);">
-        <span style="font-size: 13.5px; font-weight: 800; color: #1F4E79;">🚀 Desenvolvido por Chiku</span>
-        <br>
-        <span style="font-size: 11px; color: #64748B;">Totalmente vibecodado em 2 dias ✨☕</span>
+    <div style="text-align: center; padding: 14px 10px; background-color: #FFFFFF; border-radius: 8px; border: 1.5px solid #CBD5E1; margin-top: 18px; box-shadow: 0 1px 3px rgba(0,0,0,0.03);">
+        <span style="font-size: 15px; font-weight: 800; color: #1F4E79; letter-spacing: 0.3px;">Desenvolvido por Chiku</span>
     </div>
     """,
     unsafe_allow_html=True
@@ -771,8 +769,8 @@ else:
 st.markdown("---")
 st.markdown(
     """
-    <div style="text-align: center; color: #94A3B8; font-size: 13px; font-weight: 500; padding: 16px 0;">
-        🔥 <b>Consigaz — Auditoria de KM</b> &bull; Desenvolvido por <b>Chiku</b> &bull; <i>Totalmente vibecodado em 2 dias ✨☕</i>
+    <div style="text-align: center; color: #64748B; font-size: 14px; font-weight: 700; padding: 18px 0;">
+        Consigaz &bull; Auditoria de KM &bull; Desenvolvido por Chiku
     </div>
     """,
     unsafe_allow_html=True
