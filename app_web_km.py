@@ -1,5 +1,6 @@
 import io
 import os
+import base64
 import textwrap
 import streamlit as st
 import pandas as pd
@@ -16,65 +17,139 @@ from auditar_engine import (
     exportar_relatorio_excel
 )
 
+def carregar_simbolo_consigaz_b64() -> str:
+    caminho = os.path.join(os.path.dirname(__file__), "assets", "consigaz_symbol.png")
+    if os.path.exists(caminho):
+        try:
+            with open(caminho, "rb") as f:
+                return base64.b64encode(f.read()).decode("utf-8")
+        except Exception:
+            return ""
+    return ""
+
+caminho_icone = os.path.join(os.path.dirname(__file__), "assets", "consigaz_symbol.png")
+page_icon = caminho_icone if os.path.exists(caminho_icone) else "🔥"
+
 st.set_page_config(
     page_title="Consigaz - Auditoria de KM por Dia",
-    page_icon="🗺️",
+    page_icon=page_icon,
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# CSS completo para garantir Modo Claro perfeito e sem textos brancos invisíveis
+# CSS completo: MODO NOTURNO (Dark Mode) Corporativo Elegante e de Alto Contraste
 st.markdown("""
 <style>
+/* Fundo global e layout Dark Mode */
 .stApp, [data-testid="stAppViewContainer"], [data-testid="stHeader"], [data-testid="stToolbar"] {
-    background-color: #FFFFFF !important;
-    color: #1E293B !important;
+    background-color: #0F172A !important;
+    color: #F8FAFC !important;
 }
+
 [data-testid="stSidebar"], [data-testid="stSidebarContent"] {
-    background-color: #F8FAFC !important;
-    color: #1E293B !important;
+    background-color: #0B1120 !important;
+    color: #F8FAFC !important;
 }
+
 label, [data-testid="stWidgetLabel"] p, [data-testid="stMarkdownContainer"] p, [data-testid="stCaptionContainer"] p, div[data-baseweb="select"] span {
-    color: #1E293B !important;
+    color: #F8FAFC !important;
 }
+
 h1, h2, h3, h4, h5, h6 {
-    color: #1F4E79 !important;
+    color: #38BDF8 !important;
 }
+
+/* Tabs Dark Mode */
 button[data-baseweb="tab"] p {
-    color: #475569 !important;
+    color: #94A3B8 !important;
     font-weight: 600 !important;
     font-size: 15px !important;
 }
+
 button[data-baseweb="tab"][aria-selected="true"] p {
-    color: #1F4E79 !important;
+    color: #38BDF8 !important;
     font-weight: 700 !important;
 }
+
+/* Botões de Ação */
 .stButton>button {
-    background-color: #1F4E79 !important;
+    background-color: #0284C7 !important;
     color: #FFFFFF !important;
-    font-weight: 600 !important;
+    font-weight: 700 !important;
     border-radius: 6px !important;
     height: 44px !important;
     border: none !important;
+    box-shadow: 0 2px 8px rgba(2, 132, 199, 0.3) !important;
+    transition: all 0.2s ease !important;
 }
+
 .stButton>button p, .stButton>button span {
     color: #FFFFFF !important;
 }
+
 .stButton>button:hover {
-    background-color: #163857 !important;
+    background-color: #0369A1 !important;
     color: #FFFFFF !important;
+    box-shadow: 0 4px 12px rgba(2, 132, 199, 0.45) !important;
 }
+
+/* Caixas de Métricas Streamlit */
+[data-testid="stMetric"] {
+    background-color: #1E293B !important;
+    border: 1px solid #334155 !important;
+    border-radius: 8px !important;
+    padding: 12px 14px !important;
+}
+
+[data-testid="stMetricLabel"] p {
+    color: #94A3B8 !important;
+    font-size: 12px !important;
+    font-weight: 700 !important;
+}
+
+[data-testid="stMetricValue"] div {
+    color: #F8FAFC !important;
+    font-weight: 800 !important;
+}
+
+/* Formulários e Inputs */
+input, textarea {
+    background-color: #1E293B !important;
+    color: #F8FAFC !important;
+    border: 1px solid #475569 !important;
+    border-radius: 6px !important;
+}
+
+div[data-baseweb="select"] > div {
+    background-color: #1E293B !important;
+    color: #F8FAFC !important;
+    border-color: #475569 !important;
+}
+
+/* Expanders */
+[data-testid="stExpander"] {
+    background-color: #1E293B !important;
+    border: 1px solid #334155 !important;
+    border-radius: 8px !important;
+}
+
+/* Cabeçalho */
 .main-header {
     font-size: 26px;
     font-weight: 800;
-    color: #1F4E79 !important;
+    color: #F8FAFC !important;
     margin-bottom: 2px;
+    letter-spacing: -0.3px;
 }
+
 .sub-header {
-    font-size: 15px;
-    color: #475569 !important;
+    font-size: 14.5px;
+    color: #94A3B8 !important;
     margin-bottom: 18px;
+    line-height: 1.4;
 }
+
+/* Tabelas Dark Mode */
 .table-km {
     width: 100%;
     border-collapse: collapse;
@@ -82,71 +157,91 @@ button[data-baseweb="tab"][aria-selected="true"] p {
     font-size: 13.5px;
     margin-top: 8px;
     margin-bottom: 18px;
-    background-color: #FFFFFF;
+    background-color: #0F172A;
+    border: 1px solid #334155;
+    border-radius: 6px;
+    overflow: hidden;
 }
+
 .table-km th {
-    background-color: #1F4E79 !important;
+    background-color: #1E3A8A !important;
     color: #FFFFFF !important;
     text-align: center;
     padding: 10px 8px;
-    font-weight: 600;
-    border: 1px solid #163857;
+    font-weight: 700;
+    border: 1px solid #294A9A;
 }
+
 .table-km td {
     padding: 9px 10px;
-    border: 1px solid #CBD5E1;
-    color: #1E293B !important;
+    border: 1px solid #334155;
+    color: #F1F5F9 !important;
     vertical-align: middle;
 }
+
 .table-km tr:nth-child(even) {
-    background-color: #F8FAFC;
+    background-color: #162032;
 }
+
 .table-km tr:hover {
-    background-color: #E2E8F0;
+    background-color: #243046;
 }
+
 .row-highlight {
-    background-color: #FEF3C7 !important;
+    background-color: #382B10 !important;
 }
+
 .row-highlight td {
-    background-color: #FEF3C7 !important;
-    color: #78350F !important;
+    background-color: #382B10 !important;
+    color: #FDE68A !important;
+    border-color: #78350F !important;
 }
+
 .row-total td {
-    background-color: #1F4E79 !important;
+    background-color: #1E3A8A !important;
     color: #FFFFFF !important;
     font-weight: 800 !important;
     font-size: 14px !important;
 }
+
+/* Badges de Status Dark Mode */
 .badge-alto {
-    background-color: #DC2626 !important;
-    color: #FFFFFF !important;
+    background-color: #991B1B !important;
+    color: #FEE2E2 !important;
+    border: 1px solid #EF4444 !important;
     padding: 4px 10px;
     border-radius: 12px;
     font-size: 12.5px;
     font-weight: 700;
     display: inline-block;
 }
+
 .badge-normal {
-    background-color: #16A34A !important;
-    color: #FFFFFF !important;
+    background-color: #14532D !important;
+    color: #DCFCE7 !important;
+    border: 1px solid #22C55E !important;
     padding: 4px 10px;
     border-radius: 12px;
     font-size: 12.5px;
     font-weight: 700;
     display: inline-block;
 }
+
 .badge-mapa {
-    background-color: #0284C7 !important;
-    color: #FFFFFF !important;
+    background-color: #0369A1 !important;
+    color: #E0F2FE !important;
+    border: 1px solid #38BDF8 !important;
     padding: 4px 10px;
     border-radius: 12px;
     font-size: 13px;
     font-weight: 700;
     display: inline-block;
 }
+
 .badge-cobrando {
-    background-color: #D97706 !important;
-    color: #FFFFFF !important;
+    background-color: #854D0E !important;
+    color: #FEF3C7 !important;
+    border: 1px solid #F59E0B !important;
     padding: 3px 8px;
     border-radius: 6px;
     font-size: 12px;
@@ -154,33 +249,40 @@ button[data-baseweb="tab"][aria-selected="true"] p {
     display: inline-block;
     margin: 2px 0;
 }
+
 .badge-sem-km {
-    background-color: #E2E8F0 !important;
-    color: #475569 !important;
+    background-color: #334155 !important;
+    color: #94A3B8 !important;
+    border: 1px solid #475569 !important;
     padding: 2px 7px;
     border-radius: 6px;
     font-size: 11.5px;
     font-weight: 600;
     display: inline-block;
 }
+
 .btn-maps {
-    background-color: #2563EB !important;
+    background-color: #0284C7 !important;
     color: #FFFFFF !important;
     padding: 6px 11px;
     border-radius: 5px;
     text-decoration: none !important;
-    font-weight: 600;
+    font-weight: 700;
     font-size: 12px;
     display: inline-block;
     margin: 2px;
+    transition: background-color 0.15s ease;
 }
+
 .btn-maps:hover {
-    background-color: #1D4ED8 !important;
+    background-color: #0369A1 !important;
     color: #FFFFFF !important;
 }
+
 .btn-maps-sec {
-    background-color: #475569 !important;
-    color: #FFFFFF !important;
+    background-color: #334155 !important;
+    color: #E2E8F0 !important;
+    border: 1px solid #475569 !important;
     padding: 5px 9px;
     border-radius: 5px;
     text-decoration: none !important;
@@ -189,75 +291,116 @@ button[data-baseweb="tab"][aria-selected="true"] p {
     display: inline-block;
     margin: 2px;
 }
+
+.btn-maps-sec:hover {
+    background-color: #475569 !important;
+    color: #FFFFFF !important;
+}
+
+/* Cards de Dia ("Tudo num Card só") */
 .card-dia {
-    background-color: #FFFFFF !important;
-    border: 1.5px solid #CBD5E1 !important;
+    background-color: #1E293B !important;
+    border: 1.5px solid #334155 !important;
     border-radius: 12px !important;
     padding: 20px 22px !important;
     margin-bottom: 26px !important;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04) !important;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3) !important;
 }
+
 .card-dia:hover {
-    border-color: #94A3B8 !important;
-    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.08) !important;
+    border-color: #475569 !important;
+    box-shadow: 0 6px 22px rgba(0, 0, 0, 0.45) !important;
 }
+
 .card-dia-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    border-bottom: 2px solid #E2E8F0;
+    border-bottom: 1.5px solid #334155;
     padding-bottom: 12px;
     margin-bottom: 14px;
     flex-wrap: wrap;
     gap: 10px;
 }
+
 .card-dia-data {
     font-size: 19px;
     font-weight: 800;
-    color: #1F4E79 !important;
+    color: #38BDF8 !important;
 }
+
 .card-dia-metricas {
     display: flex;
     flex-wrap: wrap;
     gap: 12px;
-    background-color: #F8FAFC !important;
+    background-color: #0F172A !important;
     border-radius: 8px;
     padding: 14px 18px;
     margin-bottom: 16px;
-    border: 1px solid #E2E8F0;
+    border: 1px solid #334155;
 }
+
 .metrica-box {
     flex: 1 1 200px;
     display: flex;
     flex-direction: column;
 }
+
 .metrica-label {
     font-size: 11px;
     font-weight: 700;
-    color: #64748B !important;
+    color: #94A3B8 !important;
     text-transform: uppercase;
     letter-spacing: 0.5px;
     margin-bottom: 3px;
 }
+
 .metrica-val {
     font-size: 18px;
     font-weight: 800;
 }
+
 .metrica-sub {
     font-size: 12px;
-    color: #475569 !important;
+    color: #94A3B8 !important;
     margin-top: 2px;
     line-height: 1.4;
 }
 </style>
 """, unsafe_allow_html=True)
 
-# Título Principal
-st.markdown('<div class="main-header">🔥 Consigaz — Auditoria Automática de KM por Dia</div>', unsafe_allow_html=True)
-st.markdown('<div class="sub-header">Soma todos os KMs ditos no dia, calcula automaticamente quantos KMs deu a rota das OSs do dia e mostra se bate ou se há cobrança a maior</div>', unsafe_allow_html=True)
+simbolo_b64 = carregar_simbolo_consigaz_b64()
+if simbolo_b64:
+    tag_logo = f'<img src="data:image/png;base64,{simbolo_b64}" alt="Consigaz" style="height:48px;width:auto;object-fit:contain;filter:drop-shadow(0 2px 6px rgba(220,62,49,0.45));" />'
+    tag_logo_sidebar = f'<img src="data:image/png;base64,{simbolo_b64}" alt="Consigaz" style="height:32px;width:auto;object-fit:contain;filter:drop-shadow(0 1px 4px rgba(220,62,49,0.45));" />'
+else:
+    tag_logo = '<span style="font-size:32px;">🔥</span>'
+    tag_logo_sidebar = '<span style="font-size:24px;">🔥</span>'
+
+# Título Principal com Símbolo Oficial da Consigaz
+st.markdown(
+    f"""
+    <div style="display:flex;align-items:center;gap:14px;margin-bottom:6px;padding-bottom:4px;">
+        {tag_logo}
+        <div>
+            <div class="main-header">Consigaz — Auditoria Automática de KM por Dia</div>
+            <div class="sub-header">Soma todos os KMs ditos no dia, calcula automaticamente quantos KMs deu a rota das OSs do dia e mostra se bate ou se há cobrança a maior</div>
+        </div>
+    </div>
+    """,
+    unsafe_allow_html=True
+)
 
 # Barra Lateral - Configurações
-st.sidebar.header("⚙️ Parâmetros da Auditoria")
+st.sidebar.markdown(
+    f"""
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
+        {tag_logo_sidebar}
+        <span style="font-size:18px;font-weight:800;color:#F8FAFC;letter-spacing:0.3px;">Parâmetros da Auditoria</span>
+    </div>
+    """,
+    unsafe_allow_html=True
+)
 
 lista_labels = list(OPCOES_BASES_FORMATADAS.keys())
 indice_padrao = 0
@@ -313,8 +456,8 @@ senha_planilha = st.sidebar.text_input(
 st.sidebar.markdown("---")
 st.sidebar.markdown(
     """
-    <div style="text-align: center; padding: 14px 10px; background-color: #FFFFFF; border-radius: 8px; border: 1.5px solid #CBD5E1; margin-top: 18px; box-shadow: 0 1px 3px rgba(0,0,0,0.03);">
-        <span style="font-size: 15px; font-weight: 800; color: #1F4E79; letter-spacing: 0.3px;">Desenvolvido por Chiku</span>
+    <div style="text-align: center; padding: 14px 10px; background-color: #1E293B; border-radius: 8px; border: 1.5px solid #334155; margin-top: 18px; box-shadow: 0 4px 12px rgba(0,0,0,0.3);">
+        <span style="font-size: 16px; font-weight: 800; color: #38BDF8; letter-spacing: 0.5px;">Desenvolvido por Chiku</span>
     </div>
     """,
     unsafe_allow_html=True
@@ -443,15 +586,15 @@ if "resultado_auditoria" in st.session_state:
                 if is_glosa:
                     excesso = round(dif_km - margem_aceita, 1)
                     badge_veredito = f'<span class="badge-alto">🚨 EXCEDEU A MARGEM (+{dif_km:,.1f} km acima do Maps)</span>'
-                    cor_dif = "#DC2626"
-                    status_folga = f'<span style="color:#DC2626;font-weight:700;">Cobrou +{dif_km:,.1f} km acima do Maps. Ultrapassou a margem de {margem_aceita:,.0f} km em <b>+{excesso:,.1f} km</b>.</span>'
+                    cor_dif = "#F87171"
+                    status_folga = f'<span style="color:#F87171;font-weight:700;">Cobrou +{dif_km:,.1f} km acima do Maps. Ultrapassou a margem de {margem_aceita:,.0f} km em <b>+{excesso:,.1f} km</b>.</span>'
                 else:
                     badge_veredito = f'<span class="badge-normal">✅ APROVADO (Dentro da margem de {margem_aceita:,.0f} km)</span>'
-                    cor_dif = "#16A34A"
+                    cor_dif = "#4ADE80"
                     if dif_km <= 0:
-                        status_folga = f'<span style="color:#16A34A;font-weight:700;">Rota do Maps cobre totalmente a cobrança com folga de {abs(dif_km):,.1f} km.</span>'
+                        status_folga = f'<span style="color:#4ADE80;font-weight:700;">Rota do Maps cobre totalmente a cobrança com folga de {abs(dif_km):,.1f} km.</span>'
                     else:
-                        status_folga = f'<span style="color:#16A34A;font-weight:700;">Cobrou +{dif_km:,.1f} km acima do Maps, mas está <b>APROVADO</b> (dentro da margem de {margem_aceita:,.0f} km).</span>'
+                        status_folga = f'<span style="color:#4ADE80;font-weight:700;">Cobrou +{dif_km:,.1f} km acima do Maps, mas está <b>APROVADO</b> (dentro da margem de {margem_aceita:,.0f} km).</span>'
 
                 chips_cobrando = []
                 for o_cob in oss_com_km:
@@ -487,8 +630,8 @@ if "resultado_auditoria" in st.session_state:
 
                     # Aviso se a OS não constava no Totvs
                     if not o_item.get("encontrada_totvs", True):
-                        tag_totvs = '<br><span style="color:#B45309;font-size:10.5px;font-weight:700;background:#FEF3C7;padding:1px 5px;border-radius:4px;border:1px solid #FCD34D;" title="Esta OS foi informada no Fechamento mas não foi localizada no relatório Totvs extraído. O sistema utilizou os dados da própria planilha de fechamento.">⚠️ Não consta no Totvs</span>'
-                        end_rua_formatado = f"{end_rua_formatado} <small style='color:#64748B;'>(Origem: Fechamento)</small>"
+                        tag_totvs = '<br><span style="color:#FDE68A;font-size:10.5px;font-weight:700;background:#451A03;padding:1px 5px;border-radius:4px;border:1px solid #B45309;" title="Esta OS foi informada no Fechamento mas não foi localizada no relatório Totvs extraído. O sistema utilizou os dados da própria planilha de fechamento.">⚠️ Não consta no Totvs</span>'
+                        end_rua_formatado = f"{end_rua_formatado} <small style='color:#94A3B8;'>(Origem: Fechamento)</small>"
                     else:
                         tag_totvs = ""
 
@@ -499,13 +642,13 @@ if "resultado_auditoria" in st.session_state:
                     html_linhas_tabela.append(
                         f'<tr{r_cls}>'
                         f'<td style="text-align:center;font-weight:700;">{idx_ordem}</td>'
-                        f'<td style="text-align:center;font-weight:800;font-size:13.5px;color:#1F4E79;">OS {o_item["os"]}{tag_totvs}</td>'
+                        f'<td style="text-align:center;font-weight:800;font-size:13.5px;color:#38BDF8;">OS {o_item["os"]}{tag_totvs}</td>'
                         f'<td style="text-align:center;">{badge_st}</td>'
-                        f'<td style="text-align:left;font-weight:700;color:#0F172A;font-size:13px;">🏠 {end_rua_formatado}</td>'
-                        f'<td style="text-align:center;font-weight:600;color:#1E293B;">{o_item["cidade"]}</td>'
-                        f'<td style="text-align:center;color:#475569;">{o_item["cod_cliente"]}</td>'
-                        f'<td style="text-align:left;color:#334155;">{o_item["servico"]}</td>'
-                        f'<td style="text-align:center;font-weight:600;color:#0284C7;">Trecho {t_num}</td>'
+                        f'<td style="text-align:left;font-weight:700;color:#F8FAFC;font-size:13px;">🏠 {end_rua_formatado}</td>'
+                        f'<td style="text-align:center;font-weight:600;color:#E2E8F0;">{o_item["cidade"]}</td>'
+                        f'<td style="text-align:center;color:#94A3B8;">{o_item["cod_cliente"]}</td>'
+                        f'<td style="text-align:left;color:#CBD5E1;">{o_item["servico"]}</td>'
+                        f'<td style="text-align:center;font-weight:600;color:#38BDF8;">Trecho {t_num}</td>'
                         f'</tr>'
                     )
 
@@ -514,7 +657,7 @@ if "resultado_auditoria" in st.session_state:
                     <div class="card-dia-header">
                         <div>
                             <span class="card-dia-data">📅 DIA {d['Data']}</span>
-                            <span style="margin-left: 10px; font-size: 13.5px; color: #64748B; font-weight:600;">
+                            <span style="margin-left: 10px; font-size: 13.5px; color: #94A3B8; font-weight:600;">
                                 ({qtd_total_dia} OSs atendidas no roteiro)
                             </span>
                         </div>
@@ -526,12 +669,12 @@ if "resultado_auditoria" in st.session_state:
                     <div class="card-dia-metricas">
                         <div class="metrica-box">
                             <span class="metrica-label">💰 SOMA DE KM COBRADO NO DIA</span>
-                            <span class="metrica-val" style="color: #0F172A;">{soma_km:,.1f} km</span>
+                            <span class="metrica-val" style="color: #F8FAFC;">{soma_km:,.1f} km</span>
                             <span class="metrica-sub">{txt_oss_cobrando}</span>
                         </div>
                         <div class="metrica-box">
                             <span class="metrica-label">🛣️ KM CALCULADO PELAS RUAS (MAPS)</span>
-                            <span class="metrica-val" style="color: #0284C7;">{km_mapa:,.1f} km</span>
+                            <span class="metrica-val" style="color: #38BDF8;">{km_mapa:,.1f} km</span>
                             <span class="metrica-sub">({txt_trechos})</span>
                         </div>
                         <div class="metrica-box">
@@ -542,7 +685,7 @@ if "resultado_auditoria" in st.session_state:
                     </div>
 
                     <div style="margin-bottom: 14px;">
-                        <span style="font-size: 13px; font-weight: 700; color: #1E293B; margin-right: 8px;">
+                        <span style="font-size: 13px; font-weight: 700; color: #F8FAFC; margin-right: 8px;">
                             📍 Conferir Rota das Ruas no Google Maps:
                         </span>
                         <div style="margin-top: 6px;">
@@ -551,7 +694,7 @@ if "resultado_auditoria" in st.session_state:
                     </div>
 
                     <div style="margin-top: 14px;">
-                        <div style="font-weight: 700; color: #1F4E79; font-size: 14px; margin-bottom: 6px;">
+                        <div style="font-weight: 700; color: #38BDF8; font-size: 14px; margin-bottom: 6px;">
                             📋 Planilha de Todas as {qtd_total_dia} OSs do Dia com Endereço das Ruas:
                         </div>
                         <table class="table-km" style="font-size: 12.5px; margin-bottom: 4px;">
@@ -645,12 +788,13 @@ if "resultado_auditoria" in st.session_state:
                     key=f"prints_{dossie['chave_dia']}"
                 )
 
+            tag_logo_pdf = f'<img src="data:image/png;base64,{simbolo_b64}" style="height:24px;width:auto;vertical-align:middle;margin-right:6px;" />' if simbolo_b64 else ''
             folha_pdf_html = [
-                '<div style="background-color:#FFFFFF;border:2px solid #000000;padding:20px;margin-top:10px;margin-bottom:20px;font-family:Calibri,Arial,sans-serif;color:#000000;">',
+                '<div style="background-color:#FFFFFF;border:2px solid #CBD5E1;border-radius:8px;padding:22px;margin-top:10px;margin-bottom:20px;font-family:Calibri,Arial,sans-serif;color:#000000;box-shadow:0 4px 14px rgba(0,0,0,0.5);">',
                 '<table style="width:100%;border-collapse:collapse;margin-bottom:12px;border:1.5px solid #000;">',
                 '<tr>',
                 '<td style="width:55%;padding:12px;border:1.5px solid #000;vertical-align:middle;">',
-                '<span style="font-size:24px;font-weight:900;color:#004B87;letter-spacing:1px;">🔥 CONSIGAZ</span> &nbsp;&nbsp;',
+                f'<span style="display:inline-flex;align-items:center;font-size:24px;font-weight:900;color:#004B87;letter-spacing:1px;">{tag_logo_pdf}CONSIGAZ</span> &nbsp;&nbsp;',
                 '<span style="font-size:22px;font-weight:900;color:#B91C1C;">GASBALL</span> &nbsp;&nbsp;',
                 '<span style="font-size:22px;font-weight:900;color:#15803D;">PROPANGÁS</span>',
                 '</td>',
@@ -741,7 +885,7 @@ if "resultado_auditoria" in st.session_state:
             linhas_html.append(
                 f'<tr{row_class}>'
                 f'<td style="text-align:center;font-weight:600;">{r["Aba"]}</td>'
-                f'<td style="text-align:center;font-weight:800;font-size:14px;">{r["OS Cobrada"]}</td>'
+                f'<td style="text-align:center;font-weight:800;font-size:14px;color:#38BDF8;">OS {r["OS Cobrada"]}</td>'
                 f'<td style="text-align:center;font-weight:700;">{r["Data"]}</td>'
                 f'<td style="text-align:center;">{badge_os}</td>'
                 f'<td style="text-align:center;">{badge_dia}</td>'
@@ -776,7 +920,7 @@ else:
 st.markdown("---")
 st.markdown(
     """
-    <div style="text-align: center; color: #64748B; font-size: 14px; font-weight: 700; padding: 18px 0;">
+    <div style="text-align: center; color: #94A3B8; font-size: 14px; font-weight: 700; padding: 22px 0;">
         Consigaz &bull; Auditoria de KM &bull; Desenvolvido por Chiku
     </div>
     """,
