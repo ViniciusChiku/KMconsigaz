@@ -882,6 +882,16 @@ def processar_auditoria_completa(wb_fechamento, wb_totvs, base_codigo="CAN", bas
         enderecos_rota_dia = [p["endereco"] for p in paradas_agrupadas]
         trechos_dia = dividir_trechos_maps(base_endereco, enderecos_rota_dia)
 
+        # Associa cada parada ao respectivo trecho do Google Maps
+        for p in paradas_agrupadas:
+            end_p = p["endereco"]
+            p["trecho_numero"] = 1
+            if len(trechos_dia["todos_trechos"]) > 1:
+                # Se houver múltiplos trechos, paradas 1..8 ficam no Trecho 1, 9..16 no Trecho 2, etc.
+                bloco_idx = (p["ordem"] - 1) // 8 + 1
+                p["trecho_numero"] = min(bloco_idx, len(trechos_dia["todos_trechos"]))
+            p["trecho_nome"] = f"Trecho {p['trecho_numero']}"
+
         abas_dia = []
         for o in oss_com_km:
             if o["aba"] not in abas_dia:

@@ -403,38 +403,139 @@ if "resultado_auditoria" in st.session_state:
             st.markdown("\n".join(html_dias), unsafe_allow_html=True)
 
             st.markdown("---")
-            st.markdown("#### 🔍 Ver Todas as OSs e Endereços de um Dia Específico")
+            st.markdown("#### 🗺️ Conferência por Trechos e Ruas do Dia (Layout com Prints e Somatória)")
 
             opcoes_dias_det = [
                 f"{d['Data']} — Cobrado no Dia: {d['Soma KM Cobrado no Dia']:,.1f} km | Calculado pela Rota: {d['KM Calculado no Mapa']:,.1f} km ({d['Qtd Total OSs no Dia']} OSs)"
                 for d in por_dia
             ]
             idx_dia_sel = st.selectbox(
-                "Escolha o Dia abaixo para inspecionar todas as OSs do dia juntas:",
+                "Escolha o Dia abaixo para conferir as ruas divididas por Trecho do Google Maps e fazer a soma:",
                 options=range(len(opcoes_dias_det)),
                 format_func=lambda i: opcoes_dias_det[i],
                 index=0
             )
 
             dia_atual = por_dia[idx_dia_sel]
+            trechos_dia_list = dia_atual["Trechos Maps"].get("todos_trechos", [])
+            paradas_dia_list = dia_atual["Paradas Google Maps"]
 
-            st.markdown(
-                f"**🛣️ Rota Calculada ({dia_atual['Data']}):** `{dia_atual['Sequência da Rota']}` — "
-                f"**KM Estrada:** `{dia_atual['KM Estrada Mapa']:,.1f} km` + "
-                f"**Deslocamento Urbano ({dia_atual['Qtd Endereços Distintos']} endereços):** `{dia_atual['KM Urbano Mapa']:,.1f} km` = "
-                f"**Total Calculado: `{dia_atual['KM Calculado no Mapa']:,.1f} km`** (vs **`{dia_atual['Soma KM Cobrado no Dia']:,.1f} km`** cobrados no dia)"
-            )
+            st.caption(f"Roteiro Completo do Dia {dia_atual['Data']}: **{dia_atual['Sequência da Rota']}**")
 
+            # Layout B: Cards Divididos por Trecho com Ruas, OSs e Upload de Prints do Maps
+            col_t_cards = st.columns(len(trechos_dia_list))
+            km_trechos_digitados = []
+
+            for idx_t, t_obj in enumerate(trechos_dia_list, 1):
+                with col_t_cards[idx_t - 1]:
+                    st.markdown(f"### 📍 Trecho {idx_t}")
+                    st.markdown(f"**{t_obj['nome']}**")
+                    st.link_button(
+                        f"🌐 Abrir Trecho {idx_t} no Google Maps",
+                        t_obj["url"],
+                        use_container_width=True
+                    )
+
+                    # Filtra apenas as paradas deste trecho
+                    paradas_deste_trecho = [p for p in paradas_dia_list if p.get("trecho_numero", 1) == idx_t]
+                    if not paradas_deste_trecho and len(trechos_dia_list) == 1:
+                        paradas_deste_trecho = paradas_dia_list
+
+                    # Tabela com as ruas e OSs deste trecho
+                    html_trecho_table = [
+                        '<table class="table-km" style="font-size:12.5px;margin-top:6px;margin-bottom:12px;">',
+                        '<thead><tr>',
+                        '<th>#</th>',
+                        '<th>Rua / Endereço</th>',
+                        '<th>Cidade</th>',
+                        '<th>OS(s) e KM</th>',
+                        '</tr></thead><tbody>'
+                    ]
+
+                    for p in paradas_deste_trecho:
+                        oss_desc = []
+                        for x in p["oss"]:
+                            if x["km_cobrado"] > 0:
+                                oss_desc.append(f'<b>OS {x["os"]}</b> (💰 {x["km_cobrado"]:,.1f} km)')
+                            else:
+                                oss_desc.append(f'OS {x["os"]}')
+                        oss_txt = "<br>".join(oss_desc)
+                        row_style = ' class="row-highlight"' if p["tem_cobranca"] else ''
+
+                        html_trecho_table.append(
+                            f'<tr{row_style}>'
+                            f'<td style="text-align:center;font-weight:700;">{p["ordem"]}</td>'
+                            f'<td style="text-align:left;">{p["endereco"]}</td>'
+                            f'<td style="text-align:center;font-weight:600;">{p["cidade"]}</td>'
+                            f'<td style="text-align:center;">{oss_txt}</td>'
+                            f'</tr>'
+                        )
+
+                    html_trecho_table.append('</tbody></table>')
+                    st.markdown("\n".join(html_trecho_table), unsafe_allow_html=True)
+
+                    # Campo para digitar o KM que deu no print do Maps
+                    val_sugerido = float(dia_atual["KM Calculado no Mapa"] / len(trechos_dia_list))
+                    km_informado = st.number_input(
+                        f"KM Apurado no Maps (Trecho {idx_t}):",
+                        min_value=0.0,
+                        max_value=3000.0,
+                        value=val_sugerido,
+                        step=1.0,
+                        key=f"km_input_t_{dia_atual['chave_dia']}_{idx_t}"
+                    )
+                    km_trechos_digitados.append(km_informado)
+
+                    # Anexo opcional de print para este trecho
+                    img_trecho = st.file_uploader(
+                        f"Anexar print do Trecho {idx_t} (Opcional):",
+                        type=["png", "jpg", "jpeg"],
+                        key=f"img_t_{dia_atual['chave_dia']}_{idx_t}"
+                    )
+                    if img_trecho:
+                        st.image(img_trecho, caption=f"Print Google Maps — Trecho {idx_t}", use_container_width=True)
+
+            # Somatória dos Trechos e Confronto Final com a Planilha
+            soma_total_maps = sum(km_trechos_digitados)
+            soma_cobrada_dia = float(dia_atual["Soma KM Cobrado no Dia"])
+            dif_maps_vs_planilha = soma_total_maps - soma_cobrada_dia
+
+            st.markdown("<br>", unsafe_allow_html=True)
+            if soma_total_maps >= soma_cobrada_dia:
+                painel_somatoria = (
+                    '<div style="background-color:#ECFDF5;border:2px solid #10B981;border-radius:8px;padding:20px;margin-bottom:20px;">'
+                    '<h3 style="color:#065F46 !important;margin:0 0 10px 0;">✅ SOMA DOS TRECHOS BATEU COM O VALOR COBRADO NO DIA!</h3>'
+                    f'<p style="margin:0;font-size:15px;color:#064E3B !important;line-height:1.6;">'
+                    f'• <b>Soma dos Trechos no Google Maps:</b> {" + ".join(f"{k:,.1f} km" for k in km_trechos_digitados)} = <b style="font-size:16px;">{soma_total_maps:,.1f} KM</b><br>'
+                    f'• <b>Soma Cobrada pelas OSs na Planilha:</b> <b>{soma_cobrada_dia:,.1f} KM</b> ({dia_atual["OSs Cobrando KM"]})<br>'
+                    f'• <b>Conclusão:</b> A rota percorrida pelo técnico cobre a quilometragem solicitada com folga de <b>{dif_maps_vs_planilha:,.1f} km</b>. <span style="background:#10B981;color:#FFF;padding:2px 8px;border-radius:4px;font-weight:700;">Cobrança Aprovada para Pagamento</span>'
+                    '</p></div>'
+                )
+            else:
+                painel_somatoria = (
+                    '<div style="background-color:#FEF2F2;border:2px solid #EF4444;border-radius:8px;padding:20px;margin-bottom:20px;">'
+                    '<h3 style="color:#991B1B !important;margin:0 0 10px 0;">⚠️ SOMA DOS TRECHOS FICOU ABAIXO DA COBRANÇA!</h3>'
+                    f'<p style="margin:0;font-size:15px;color:#7F1D1D !important;line-height:1.6;">'
+                    f'• <b>Soma dos Trechos no Google Maps:</b> {" + ".join(f"{k:,.1f} km" for k in km_trechos_digitados)} = <b style="font-size:16px;">{soma_total_maps:,.1f} KM</b><br>'
+                    f'• <b>Soma Cobrada pelas OSs na Planilha:</b> <b>{soma_cobrada_dia:,.1f} KM</b> ({dia_atual["OSs Cobrando KM"]})<br>'
+                    f'• <b>Diferença Cobrada a Maior:</b> <span style="background:#DC2626;color:#FFF;padding:2px 8px;border-radius:4px;font-weight:800;">{abs(dif_maps_vs_planilha):,.1f} KM sem respaldo</span>'
+                    '</p></div>'
+                )
+
+            st.markdown(painel_somatoria, unsafe_allow_html=True)
+
+            # Tabela Completa de Todas as OSs do Dia
+            st.markdown(f"##### 📋 Planilha Consolidada de Todas as {dia_atual['Qtd Total OSs no Dia']} OSs do Dia {dia_atual['Data']}")
             html_oss_dia = [
                 '<table class="table-km">',
                 '<thead><tr>',
-                '<th>Aba da Planilha</th>',
+                '<th>Aba</th>',
                 '<th>Ordem de Serviço</th>',
                 '<th>Status KM</th>',
-                '<th>KM Registrado na OS</th>',
+                '<th>KM na OS</th>',
                 '<th>Cód. Cliente</th>',
                 '<th>Cidade</th>',
-                '<th>Endereço Simplificado (Sem Bairro)</th>',
+                '<th>Endereço Completo (Google Maps)</th>',
                 '<th>Serviço Prestado</th>',
                 '</tr></thead><tbody>'
             ]
@@ -462,7 +563,7 @@ if "resultado_auditoria" in st.session_state:
                 '<tr class="row-total">'
                 f'<td colspan="3" style="text-align:right;">SOMA DE KM DITO NO DIA ({dia_atual["Data"]}):</td>'
                 f'<td style="text-align:center;">{dia_atual["Soma KM Cobrado no Dia"]:,.1f} km</td>'
-                f'<td colspan="4" style="text-align:left;">KM Calculado da Rota no Mapa: {dia_atual["KM Calculado no Mapa"]:,.1f} km ({dia_atual["Qtd Total OSs no Dia"]} OSs no dia)</td>'
+                f'<td colspan="4" style="text-align:left;">Total no Google Maps (Trechos Somados): {soma_total_maps:,.1f} km | {dia_atual["Qtd Total OSs no Dia"]} OSs atendidas</td>'
                 '</tr>'
             )
             html_oss_dia.append('</tbody></table>')
