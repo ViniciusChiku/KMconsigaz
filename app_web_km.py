@@ -310,6 +310,18 @@ senha_planilha = st.sidebar.text_input(
     help="Senha padrão de fechamento utilizada para desbloquear os arquivos (testa FECHAMENTO e fechamento automaticamente)."
 )
 
+st.sidebar.markdown("---")
+st.sidebar.markdown(
+    """
+    <div style="text-align: center; padding: 12px 8px; background-color: #FFFFFF; border-radius: 8px; border: 1.5px solid #E2E8F0; margin-top: 15px; box-shadow: 0 1px 3px rgba(0,0,0,0.04);">
+        <span style="font-size: 13.5px; font-weight: 800; color: #1F4E79;">🚀 Desenvolvido por Chiku</span>
+        <br>
+        <span style="font-size: 11px; color: #64748B;">Totalmente vibecodado em 2 dias ✨☕</span>
+    </div>
+    """,
+    unsafe_allow_html=True
+)
+
 # Área de Upload
 col1, col2 = st.columns(2)
 
@@ -755,3 +767,13 @@ if "resultado_auditoria" in st.session_state:
         )
 else:
     st.info("👆 Arraste a **Planilha de Fechamento** e o **Relatório Totvs** nos campos acima e clique em **Calcular KMs por Dia Automaticamente**.")
+
+st.markdown("---")
+st.markdown(
+    """
+    <div style="text-align: center; color: #94A3B8; font-size: 13px; font-weight: 500; padding: 16px 0;">
+        🔥 <b>Consigaz — Auditoria de KM</b> &bull; Desenvolvido por <b>Chiku</b> &bull; <i>Totalmente vibecodado em 2 dias ✨☕</i>
+    </div>
+    """,
+    unsafe_allow_html=True
+)
