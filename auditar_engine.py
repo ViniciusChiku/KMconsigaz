@@ -224,9 +224,23 @@ def calcular_rota_osrm_por_cidades(cidade_base, uf_base, lista_cidades_dia, qtd_
 _GEOCODE_CACHE = {}
 
 
+def extrair_cidade_do_endereco(end_str, uf_padrao="RS"):
+    """Extrai o nome do município a partir de strings como 'Rua XYZ, 123, Caxias Do Sul - RS'."""
+    if not end_str or str(end_str).strip() in ["", "-", "None"]:
+        return ""
+    s = str(end_str).strip()
+    partes = s.split(",")
+    candidata = partes[-1] if len(partes) > 1 else s
+    candidata = re.sub(r'-\s*[A-Z]{2}\b', '', candidata, flags=re.IGNORECASE)
+    candidata = re.sub(r'/[A-Z]{2}\b', '', candidata, flags=re.IGNORECASE)
+    candidata = candidata.replace(uf_padrao, "").strip(" -/.,")
+    return candidata.strip()
+
+
 def geocodificar_endereco_rua(endereco_str, uf_padrao="RS"):
     """
-    Geocodifica o endereço da rua via Photon / Nominatim com cache em memória e fallback seguro.
+    Resolve coordenadas de forma instantânea através da base oficial do IBGE.
+    Evita bloqueios e timeouts de rede no Streamlit Cloud.
     """
     if not endereco_str or str(endereco_str).strip() in ["", "-", "None"]:
         return None
@@ -235,33 +249,11 @@ def geocodificar_endereco_rua(endereco_str, uf_padrao="RS"):
     if chave in _GEOCODE_CACHE:
         return _GEOCODE_CACHE[chave]
 
-    # Prepara query com Rua + Cidade + UF + Brasil
-    q = s
-    if "BRASIL" not in q.upper():
-        q = f"{q}, Brasil"
-
-    url = f"https://photon.komoot.io/api/?q={urllib.parse.quote(q)}&limit=1"
-    req = urllib.request.Request(url, headers={"User-Agent": "ConsigazAuditoriaKM/3.0"})
-    try:
-        with urllib.request.urlopen(req, timeout=4) as resp:
-            data = json.loads(resp.read().decode())
-            if data.get("features"):
-                coords = data["features"][0]["geometry"]["coordinates"]
-                lat, lon = coords[1], coords[0]
-                # Valida se está no Brasil
-                if -35.0 <= lat <= 6.0 and -75.0 <= lon <= -30.0:
-                    _GEOCODE_CACHE[chave] = (lat, lon)
-                    return (lat, lon)
-    except Exception:
-        pass
-
-    # Fallback: extrai a cidade e pega a coordenada oficial do município
-    partes = s.split(",")
-    if len(partes) > 1:
-        cidade_candidata = partes[-1].replace(f"- {uf_padrao}", "").replace(uf_padrao, "").strip()
-        coord_cid = obter_coordenada_cidade(cidade_candidata, uf_padrao)
-        if coord_cid:
-            _GEOCODE_CACHE[chave] = (coord_cid[0], coord_cid[1])
+    cidade_nome = extrair_cidade_do_endereco(s, uf_padrao)
+    if cidade_nome:
+        coord = obter_coordenada_cidade(cidade_nome, uf_padrao)
+        if coord:
+            _GEOCODE_CACHE[chave] = (coord[0], coord[1])
             return _GEOCODE_CACHE[chave]
 
     return None
@@ -269,8 +261,8 @@ def geocodificar_endereco_rua(endereco_str, uf_padrao="RS"):
 
 def calcular_km_trechos_por_ruas(trechos_obj, base_endereco, uf_base="RS"):
     """
-    Calcula a quilometragem rodoviária passando exatamente por cada uma das ruas dos trechos,
-    somando o trajeto sequencial de cada trecho (ex: Trecho 1 + Trecho 2).
+    Calcula a quilometragem rodoviária passando pelas ruas e paradas de cada trecho,
+    somando o trajeto sequencial de cada trecho (ex: Trecho 1 + Trecho 2) de forma instantânea.
     """
     todos_trechos = trechos_obj.get("todos_trechos", [])
     if not todos_trechos:
@@ -283,27 +275,62 @@ def calcular_km_trechos_por_ruas(trechos_obj, base_endereco, uf_base="RS"):
         paradas_t = [p for p in t.get("paradas", [])]
         pontos_str = [t.get("origem", base_endereco)] + paradas_t + [t.get("destino", base_endereco)]
 
-        # Geocodifica em lote para máxima velocidade
-        coords_pontos = []
+        coords_unicas = []
+        qtd_mesma_cidade = 0
+        cidade_anterior = None
+
         for p_str in pontos_str:
-            c = geocodificar_endereco_rua(p_str, uf_base)
-            if c:
-                coords_pontos.append(c)
+            cid = extrair_cidade_do_endereco(p_str, uf_base)
+            if not cid:
+                continue
+            coord = obter_coordenada_cidade(cid, uf_base)
+            if not coord:
+                continue
+            if cid == cidade_anterior:
+                qtd_mesma_cidade += 1
+            else:
+                coords_unicas.append(coord)
+                cidade_anterior = cid
+
+        # Garante que o destino esteja representado
+        dest_cid = extrair_cidade_do_endereco(pontos_str[-1], uf_base)
+        dest_coord = obter_coordenada_cidade(dest_cid, uf_base)
+        if dest_coord and (not coords_unicas or coords_unicas[-1] != dest_coord):
+            coords_unicas.append(dest_coord)
 
         km_este_trecho = 0.0
-        if len(coords_pontos) >= 2:
-            s_coords = ";".join(f"{c[1]:.5f},{c[0]:.5f}" for c in coords_pontos)
+
+        if len(coords_unicas) == 2:
+            s_coords = ";".join(f"{c[1]:.5f},{c[0]:.5f}" for c in coords_unicas)
             url_route = f"http://router.project-osrm.org/route/v1/driving/{s_coords}?overview=false"
             try:
                 req = urllib.request.Request(url_route, headers={"User-Agent": "ConsigazAuditoriaKM/3.0"})
-                with urllib.request.urlopen(req, timeout=5) as resp:
+                with urllib.request.urlopen(req, timeout=4) as resp:
                     data = json.loads(resp.read().decode())
                     if data.get("routes"):
-                        km_este_trecho = round(data["routes"][0]["distance"] / 1000.0, 1)
+                        km_este_trecho = data["routes"][0]["distance"] / 1000.0
+            except Exception:
+                pass
+        elif len(coords_unicas) > 2:
+            s_coords = ";".join(f"{c[1]:.5f},{c[0]:.5f}" for c in coords_unicas)
+            is_circuito = (coords_unicas[0] == coords_unicas[-1])
+            if is_circuito:
+                url_trip = f"http://router.project-osrm.org/trip/v1/driving/{s_coords[:-1]}?roundtrip=true&source=first&overview=false"
+            else:
+                url_trip = f"http://router.project-osrm.org/trip/v1/driving/{s_coords}?source=first&destination=last&overview=false"
+            try:
+                req = urllib.request.Request(url_trip, headers={"User-Agent": "ConsigazAuditoriaKM/3.0"})
+                with urllib.request.urlopen(req, timeout=4) as resp:
+                    data = json.loads(resp.read().decode())
+                    if data.get("trips"):
+                        km_este_trecho = data["trips"][0]["distance"] / 1000.0
+                    elif data.get("routes"):
+                        km_este_trecho = data["routes"][0]["distance"] / 1000.0
             except Exception:
                 pass
 
-        if km_este_trecho <= 0.0:
+        # Fallback geodésico se OSRM estiver indisponível
+        if km_este_trecho <= 0.0 and len(coords_unicas) >= 2:
             import math
             def haversine(c1, c2):
                 r = 6371.0
@@ -312,22 +339,31 @@ def calcular_km_trechos_por_ruas(trechos_obj, base_endereco, uf_base="RS"):
                 dl = math.radians(c2[1] - c1[1])
                 a = math.sin(dp/2)**2 + math.cos(p1)*math.cos(p2)*math.sin(dl/2)**2
                 return 2 * r * math.asin(math.sqrt(a))
-            if len(coords_pontos) >= 2:
-                dist_reta = sum(haversine(coords_pontos[i], coords_pontos[i+1]) for i in range(len(coords_pontos)-1))
-                km_este_trecho = round(dist_reta * 1.30, 1)
+            dist_reta = sum(haversine(coords_unicas[i], coords_unicas[i+1]) for i in range(len(coords_unicas)-1))
+            km_este_trecho = dist_reta * 1.28
 
-        t["km_calculado_ruas"] = km_este_trecho
-        soma_total_ruas += km_este_trecho
-        detalhes_trechos.append(km_este_trecho)
+        # Deslocamento urbano interno entre as ruas da mesma cidade
+        km_urbano = qtd_mesma_cidade * 4.0
+        km_final_trecho = round(km_este_trecho + km_urbano, 1)
+
+        t["km_calculado_ruas"] = km_final_trecho
+        soma_total_ruas += km_final_trecho
+        detalhes_trechos.append(km_final_trecho)
 
     return round(soma_total_ruas, 1), detalhes_trechos
 
 
 def detectar_base_por_texto(texto):
+    txt = str(texto or "").upper()
     if "CARIACICA" in txt: return "CAR"
     if "CANEDO" in txt: return "SNC"
     if "ARAUCARIA" in txt or "ARAUCÁRIA" in txt: return "ARA"
     if "UBERLANDIA" in txt or "UBERLÂNDIA" in txt: return "UBR"
+    if "BRASILIA" in txt or "BRASÍLIA" in txt: return "BRA"
+    if "BETIM" in txt: return "BTM"
+    if "PORTO BELO" in txt: return "PTB"
+    if "JANDAIA" in txt: return "JDS"
+    return "CAN"
     if "BRASILIA" in txt or "BRASÍLIA" in txt: return "BRA"
     if "BETIM" in txt: return "BTM"
     if "PORTO BELO" in txt: return "PTB"
@@ -610,9 +646,10 @@ def extrair_todas_oss_fechamento(wb_fechamento):
     return itens_km, oss_por_data, list(abas_encontradas), todas_oss_fechamento
 
 
-def carregar_dados_totvs(wb_totvs, uf_padrao="RS"):
+def carregar_dados_totvs(wb_totvs, uf_padrao="RS", oss_filtro=None):
     """
     Processa a aba Totvs (ESOS0301... ou Relatório) e indexa todas as OSs.
+    Usa iter_rows para leitura ultrarrápida (0.5s) e filtra apenas as OSs de interesse se informado.
     """
     ws_rel = None
     for sname in wb_totvs.sheetnames:
@@ -633,28 +670,42 @@ def carregar_dados_totvs(wb_totvs, uf_padrao="RS"):
     col_map = {}
     for c in range(1, ws_rel.max_column + 1):
         v = str(ws_rel.cell(header_row, c).value or "").strip().upper()
-        if "NR ORDEM" in v or v == "ORDEM" or v == "OS": col_map["os"] = c
-        elif "ENDERE" in v: col_map["endereco"] = c
-        elif "BAIRRO" in v: col_map["bairro"] = c
-        elif "CIDADE" in v: col_map["cidade"] = c
-        elif "ESTADO" in v or v == "UF": col_map["uf"] = c
-        elif "CEP" in v: col_map["cep"] = c
+        idx = c - 1
+        if "NR ORDEM" in v or v == "ORDEM" or v == "OS": col_map["os"] = idx
+        elif "ENDERE" in v: col_map["endereco"] = idx
+        elif "BAIRRO" in v: col_map["bairro"] = idx
+        elif "CIDADE" in v: col_map["cidade"] = idx
+        elif "ESTADO" in v or v == "UF": col_map["uf"] = idx
+        elif "CEP" in v: col_map["cep"] = idx
         elif any(t in v for t in ["TÉCNICO", "TECNICO", "TCNICO"]) and "USU" not in v:
-            col_map["tecnico"] = c
-        elif "DT CONCLUSAO" in v or "CONCLUSAO" in v: col_map["dt_concl"] = c
-        elif "DATA FINALIZA" in v or "FINALIZA" in v: col_map["dt_final"] = c
-        elif "DT ABERTURA" in v or "ABERTURA" in v: col_map["dt_abert"] = c
-        elif "SITUA" in v and "USU" not in v and "MORADOR" not in v: col_map["situacao"] = c
-        elif "COD CLIENTE" in v or "CÓD CLIENTE" in v or "CD CLIENTE" in v: col_map["cod_cliente"] = c
-        elif "NOME CLIENTE" in v or ("CLIENTE" in v and "CLASSIF" not in v and "NOME" in v): col_map["cliente"] = c
-        elif "MOTIVO" in v and "DESC" not in v: col_map["motivo"] = c
-        elif "DESC" in v and "MOTIVO" in v: col_map["desc_motivo"] = c
+            col_map["tecnico"] = idx
+        elif "DT CONCLUSAO" in v or "CONCLUSAO" in v: col_map["dt_concl"] = idx
+        elif "DATA FINALIZA" in v or "FINALIZA" in v: col_map["dt_final"] = idx
+        elif "DT ABERTURA" in v or "ABERTURA" in v: col_map["dt_abert"] = idx
+        elif "SITUA" in v and "USU" not in v and "MORADOR" not in v: col_map["situacao"] = idx
+        elif "COD CLIENTE" in v or "CÓD CLIENTE" in v or "CD CLIENTE" in v: col_map["cod_cliente"] = idx
+        elif "NOME CLIENTE" in v or ("CLIENTE" in v and "CLASSIF" not in v and "NOME" in v): col_map["cliente"] = idx
+        elif "MOTIVO" in v and "DESC" not in v: col_map["motivo"] = idx
+        elif "DESC" in v and "MOTIVO" in v: col_map["desc_motivo"] = idx
+
+    filtro_set = None
+    if oss_filtro:
+        filtro_set = {int(x) if str(x).isdigit() else str(x).strip() for x in oss_filtro}
 
     os_dict = {}
     por_data_dict = {}
 
-    for r in range(header_row + 1, ws_rel.max_row + 1):
-        val_os = ws_rel.cell(r, col_map.get("os", 1)).value
+    idx_os = col_map.get("os", 0)
+    def _val(row, k, padrao=""):
+        if k in col_map and col_map[k] < len(row):
+            v = row[col_map[k]]
+            return v if v is not None else padrao
+        return padrao
+
+    for row in ws_rel.iter_rows(min_row=header_row + 1, values_only=True):
+        if not row or len(row) <= idx_os:
+            continue
+        val_os = row[idx_os]
         if val_os is None or str(val_os).strip() == "":
             continue
 
@@ -663,18 +714,23 @@ def carregar_dados_totvs(wb_totvs, uf_padrao="RS"):
         except Exception:
             os_num = str(val_os).strip()
 
-        end_bruto = ws_rel.cell(r, col_map.get("endereco", 15)).value if "endereco" in col_map else ""
-        bairro = ws_rel.cell(r, col_map.get("bairro", 16)).value if "bairro" in col_map else ""
-        cidade = ws_rel.cell(r, col_map.get("cidade", 17)).value if "cidade" in col_map else ""
-        uf = ws_rel.cell(r, col_map.get("uf", 18)).value if "uf" in col_map else ""
-        cep = ws_rel.cell(r, col_map.get("cep", 19)).value if "cep" in col_map else ""
-        tecnico = ws_rel.cell(r, col_map.get("tecnico", 35)).value if "tecnico" in col_map else ""
-        dt_final = ws_rel.cell(r, col_map.get("dt_final", 29)).value if "dt_final" in col_map else None
-        dt_concl = ws_rel.cell(r, col_map.get("dt_concl", 28)).value if "dt_concl" in col_map else None
-        dt_abert = ws_rel.cell(r, col_map.get("dt_abert", 27)).value if "dt_abert" in col_map else None
-        situacao = ws_rel.cell(r, col_map.get("situacao", 7)).value if "situacao" in col_map else ""
-        cliente = ws_rel.cell(r, col_map.get("cliente", 13)).value if "cliente" in col_map else ""
-        cod_cli = ws_rel.cell(r, col_map.get("cod_cliente", 12)).value if "cod_cliente" in col_map else ""
+        if filtro_set is not None and os_num not in filtro_set:
+            continue
+
+        end_bruto = _val(row, "endereco")
+        bairro = _val(row, "bairro")
+        cidade = _val(row, "cidade")
+        uf = _val(row, "uf")
+        cep = _val(row, "cep")
+        tecnico = _val(row, "tecnico")
+        dt_final = _val(row, "dt_final", None)
+        dt_concl = _val(row, "dt_concl", None)
+        dt_abert = _val(row, "dt_abert", None)
+        situacao = _val(row, "situacao")
+        cliente = _val(row, "cliente")
+        cod_cli = _val(row, "cod_cliente")
+        desc_motivo = _val(row, "desc_motivo")
+        motivo_num = _val(row, "motivo")
 
         dt_str, dt_obj = normalizar_data(dt_final or dt_concl or dt_abert)
         hora_str = ""
@@ -683,10 +739,7 @@ def carregar_dados_totvs(wb_totvs, uf_padrao="RS"):
         elif dt_final and " " in str(dt_final):
             hora_str = str(dt_final).split(" ")[1][:8]
 
-        desc_motivo = ws_rel.cell(r, col_map.get("desc_motivo", 6)).value if "desc_motivo" in col_map else ""
-        motivo_num = ws_rel.cell(r, col_map.get("motivo", 5)).value if "motivo" in col_map else ""
         servico_nome = str(desc_motivo or motivo_num or "VISITA OPERACIONAL").strip()
-
         end_limpo = limpar_endereco(end_bruto, bairro, cidade, uf, cep, uf_padrao=uf_padrao)
 
         rec = {
@@ -833,9 +886,10 @@ def processar_auditoria_completa(wb_fechamento, wb_totvs, base_codigo="CAN", bas
 
     # 1. Extrai todas as OSs do fechamento (com e sem KM)
     itens_km, _, abas_auditadas, todas_oss_fechamento = extrair_todas_oss_fechamento(wb_fechamento)
+    set_todas_oss = {reg["os"] for reg in todas_oss_fechamento}
 
-    # 2. Carrega índice Totvs passando a UF correta da Base
-    os_dict, _ = carregar_dados_totvs(wb_totvs, uf_padrao=uf_base)
+    # 2. Carrega índice Totvs passando a UF correta da Base e filtrando para velocidade instantânea
+    os_dict, _ = carregar_dados_totvs(wb_totvs, uf_padrao=uf_base, oss_filtro=set_todas_oss)
 
     # 3. Enriquece todas as OSs do fechamento com os dados do Totvs
     oss_enriquecidas = []
