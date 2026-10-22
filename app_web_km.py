@@ -357,9 +357,11 @@ if "resultado_auditoria" in st.session_state:
                 alerta_multi = f"<br><small style='color:#B91C1C;font-weight:700;'>⚡ {qtd_cobrando} OSs cobrando no mesmo dia!</small>" if qtd_cobrando > 1 else ""
                 badge_soma = f'<span style="font-size:15px;font-weight:800;color:#0F172A;">{soma_km:,.1f} km</span>{alerta_multi}'
 
+                txt_trechos = d.get("Texto Trechos KM", "")
+                sub_mapa = f"<br><small style='color:#475569;'>({txt_trechos})</small>" if txt_trechos else f"<br><small style='color:#475569;'>({km_estrada:,.0f} km estrada + {km_urb:,.0f} km nas {qtd_enderecos} OSs)</small>"
                 badge_mapa = (
                     f'<span class="badge-mapa">🛣️ {km_mapa:,.1f} km</span>'
-                    f'<br><small style="color:#475569;">({km_estrada:,.0f} km estrada + {km_urb:,.0f} km nas {qtd_enderecos} OSs)</small>'
+                    f'{sub_mapa}'
                 )
 
                 if is_glosa:
@@ -369,7 +371,7 @@ if "resultado_auditoria" in st.session_state:
                     )
                 else:
                     badge_veredito = (
-                        f'<span class="badge-normal">✅ BATEU COM A ROTA</span>'
+                        f'<span class="badge-normal">✅ BATEU COM AS RUAS</span>'
                         f'<br><small style="color:#166534;font-weight:600;">Rota cobre os {soma_km:,.1f} km</small>'
                     )
 
@@ -474,8 +476,10 @@ if "resultado_auditoria" in st.session_state:
                     html_trecho_table.append('</tbody></table>')
                     st.markdown("\n".join(html_trecho_table), unsafe_allow_html=True)
 
-                    # Campo para digitar o KM que deu no print do Maps
-                    val_sugerido = float(dia_atual["KM Calculado no Mapa"] / len(trechos_dia_list))
+                    # Campo para digitar o KM que deu no print do Maps (já pré-preenchido com o valor calculado das ruas daquele trecho)
+                    val_sugerido = float(t_obj.get("km_calculado_ruas", 0.0))
+                    if val_sugerido <= 0.0:
+                        val_sugerido = float(dia_atual["KM Calculado no Mapa"] / len(trechos_dia_list))
                     km_informado = st.number_input(
                         f"KM Apurado no Maps (Trecho {idx_t}):",
                         min_value=0.0,

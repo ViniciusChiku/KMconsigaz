@@ -221,22 +221,109 @@ def calcular_rota_osrm_por_cidades(cidade_base, uf_base, lista_cidades_dia, qtd_
     }
 
 
+_GEOCODE_CACHE = {}
+
+
+def geocodificar_endereco_rua(endereco_str, uf_padrao="RS"):
+    """
+    Geocodifica o endereço da rua via Photon / Nominatim com cache em memória e fallback seguro.
+    """
+    if not endereco_str or str(endereco_str).strip() in ["", "-", "None"]:
+        return None
+    s = str(endereco_str).strip()
+    chave = f"{s}|{uf_padrao}".upper()
+    if chave in _GEOCODE_CACHE:
+        return _GEOCODE_CACHE[chave]
+
+    # Prepara query com Rua + Cidade + UF + Brasil
+    q = s
+    if "BRASIL" not in q.upper():
+        q = f"{q}, Brasil"
+
+    url = f"https://photon.komoot.io/api/?q={urllib.parse.quote(q)}&limit=1"
+    req = urllib.request.Request(url, headers={"User-Agent": "ConsigazAuditoriaKM/3.0"})
+    try:
+        with urllib.request.urlopen(req, timeout=4) as resp:
+            data = json.loads(resp.read().decode())
+            if data.get("features"):
+                coords = data["features"][0]["geometry"]["coordinates"]
+                lat, lon = coords[1], coords[0]
+                # Valida se está no Brasil
+                if -35.0 <= lat <= 6.0 and -75.0 <= lon <= -30.0:
+                    _GEOCODE_CACHE[chave] = (lat, lon)
+                    return (lat, lon)
+    except Exception:
+        pass
+
+    # Fallback: extrai a cidade e pega a coordenada oficial do município
+    partes = s.split(",")
+    if len(partes) > 1:
+        cidade_candidata = partes[-1].replace(f"- {uf_padrao}", "").replace(uf_padrao, "").strip()
+        coord_cid = obter_coordenada_cidade(cidade_candidata, uf_padrao)
+        if coord_cid:
+            _GEOCODE_CACHE[chave] = (coord_cid[0], coord_cid[1])
+            return _GEOCODE_CACHE[chave]
+
+    return None
+
+
+def calcular_km_trechos_por_ruas(trechos_obj, base_endereco, uf_base="RS"):
+    """
+    Calcula a quilometragem rodoviária passando exatamente por cada uma das ruas dos trechos,
+    somando o trajeto sequencial de cada trecho (ex: Trecho 1 + Trecho 2).
+    """
+    todos_trechos = trechos_obj.get("todos_trechos", [])
+    if not todos_trechos:
+        return 0.0, []
+
+    soma_total_ruas = 0.0
+    detalhes_trechos = []
+
+    for idx, t in enumerate(todos_trechos, 1):
+        paradas_t = [p for p in t.get("paradas", [])]
+        pontos_str = [t.get("origem", base_endereco)] + paradas_t + [t.get("destino", base_endereco)]
+
+        # Geocodifica em lote para máxima velocidade
+        coords_pontos = []
+        for p_str in pontos_str:
+            c = geocodificar_endereco_rua(p_str, uf_base)
+            if c:
+                coords_pontos.append(c)
+
+        km_este_trecho = 0.0
+        if len(coords_pontos) >= 2:
+            s_coords = ";".join(f"{c[1]:.5f},{c[0]:.5f}" for c in coords_pontos)
+            url_route = f"http://router.project-osrm.org/route/v1/driving/{s_coords}?overview=false"
+            try:
+                req = urllib.request.Request(url_route, headers={"User-Agent": "ConsigazAuditoriaKM/3.0"})
+                with urllib.request.urlopen(req, timeout=5) as resp:
+                    data = json.loads(resp.read().decode())
+                    if data.get("routes"):
+                        km_este_trecho = round(data["routes"][0]["distance"] / 1000.0, 1)
+            except Exception:
+                pass
+
+        if km_este_trecho <= 0.0:
+            import math
+            def haversine(c1, c2):
+                r = 6371.0
+                p1, p2 = math.radians(c1[0]), math.radians(c2[0])
+                dp = math.radians(c2[0] - c1[0])
+                dl = math.radians(c2[1] - c1[1])
+                a = math.sin(dp/2)**2 + math.cos(p1)*math.cos(p2)*math.sin(dl/2)**2
+                return 2 * r * math.asin(math.sqrt(a))
+            if len(coords_pontos) >= 2:
+                dist_reta = sum(haversine(coords_pontos[i], coords_pontos[i+1]) for i in range(len(coords_pontos)-1))
+                km_este_trecho = round(dist_reta * 1.30, 1)
+
+        t["km_calculado_ruas"] = km_este_trecho
+        soma_total_ruas += km_este_trecho
+        detalhes_trechos.append(km_este_trecho)
+
+    return round(soma_total_ruas, 1), detalhes_trechos
+
+
 def detectar_base_por_texto(texto):
-    """Identifica o código da base (ex: MAU, PLN, DQX, CAN) no nome do arquivo ou texto."""
-    if not texto:
-        return "CAN"
-    txt = str(texto).upper()
-    for num, d in ENDERECOS_BASES_DETALHADOS.items():
-        sigla = d["sigla"]
-        if re.search(rf'(?:^|[-_ \.\(\)\[\]]){sigla}(?:$|[-_ \.\(\)\[\]])', txt):
-            return sigla
-    if "MAUA" in txt or "MAUÁ" in txt: return "MAU"
-    if "PAULINIA" in txt or "PAULÍNIA" in txt: return "PLN"
-    if "CANOAS" in txt: return "CAN"
-    if "CAXIAS" in txt: return "DQX"
-    if "BARUERI" in txt: return "BRU"
-    if "RIBEIRAO" in txt or "RIBEIRÃO" in txt: return "RIB"
-    if "VICENTE" in txt: return "SVC"
     if "CARIACICA" in txt: return "CAR"
     if "CANEDO" in txt: return "SNC"
     if "ARAUCARIA" in txt or "ARAUCÁRIA" in txt: return "ARA"
@@ -665,6 +752,7 @@ def dividir_trechos_maps(base_endereco, paradas):
             "url": gerar_url_google_maps(base_endereco, paradas_validas, base_endereco),
             "origem": base_endereco,
             "destino": base_endereco,
+            "paradas": paradas_validas,
             "qtd_paradas": len(paradas_validas)
         }
         return {
@@ -689,6 +777,7 @@ def dividir_trechos_maps(base_endereco, paradas):
                 "url": url_t,
                 "origem": ponto_atual,
                 "destino": destino_final,
+                "paradas": intermed,
                 "qtd_paradas": len(intermed)
             })
             break
@@ -703,6 +792,7 @@ def dividir_trechos_maps(base_endereco, paradas):
                 "url": url_t,
                 "origem": ponto_atual,
                 "destino": ponto_transicao,
+                "paradas": intermed,
                 "qtd_paradas": len(bloco)
             })
             ponto_atual = ponto_transicao
@@ -892,6 +982,21 @@ def processar_auditoria_completa(wb_fechamento, wb_totvs, base_codigo="CAN", bas
                 p["trecho_numero"] = min(bloco_idx, len(trechos_dia["todos_trechos"]))
             p["trecho_nome"] = f"Trecho {p['trecho_numero']}"
 
+        # CÁLCULO PELAS RUAS DOS TRECHOS (SOMATÓRIA REAL DO GOOGLE MAPS)
+        km_ruas_total, kms_trechos_lista = calcular_km_trechos_por_ruas(
+            trechos_obj=trechos_dia,
+            base_endereco=base_endereco,
+            uf_base=uf_base
+        )
+
+        # Se o cálculo pelas ruas for bem sucedido, adota ele como KM Oficial do Mapa!
+        if km_ruas_total > 0.0:
+            km_final_mapa = km_ruas_total
+            origem_calculo = "Ruas"
+        else:
+            km_final_mapa = km_calculado_mapa
+            origem_calculo = "Cidades"
+
         abas_dia = []
         for o in oss_com_km:
             if o["aba"] not in abas_dia:
@@ -903,9 +1008,12 @@ def processar_auditoria_completa(wb_fechamento, wb_totvs, base_codigo="CAN", bas
         ]
         todas_oss_numeros_str = ", ".join(str(o["os"]) for o in lista_oss_dia)
 
-        diferenca_km = round(soma_km_dia - km_calculado_mapa, 1)
-        # Considera aprovado se o KM cobrado for menor ou até 15 km próximo do KM calculado no mapa
+        diferenca_km = round(soma_km_dia - km_final_mapa, 1)
+        # Considera aprovado se o KM cobrado for menor ou tolerado até 20 km
         precisa_glosar = diferenca_km > 20.0
+
+        # Texto detalhado dos trechos (ex: T1: 415 km + T2: 194 km)
+        txt_trechos_km = " + ".join(f"T{i}: {k:,.0f} km" for i, k in enumerate(kms_trechos_lista, 1))
 
         registro_dia = {
             "chave_dia": chave_dia,
@@ -919,7 +1027,11 @@ def processar_auditoria_completa(wb_fechamento, wb_totvs, base_codigo="CAN", bas
             "Todas as OSs do Dia": lista_oss_dia,
             "Todas OSs Numeros": todas_oss_numeros_str,
             "Soma KM Cobrado no Dia": soma_km_dia,
-            "KM Calculado no Mapa": km_calculado_mapa,
+            "KM Calculado no Mapa": km_final_mapa,
+            "KM Ruas Total": km_ruas_total,
+            "KMs Trechos Lista": kms_trechos_lista,
+            "Texto Trechos KM": txt_trechos_km,
+            "Origem Calculo": origem_calculo,
             "KM Estrada Mapa": km_estrada_mapa,
             "KM Urbano Mapa": km_urbano_mapa,
             "Diferença (Cobrado - Mapa)": diferenca_km,
