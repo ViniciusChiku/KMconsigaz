@@ -1015,67 +1015,37 @@ def render_botao_copiar_clipboard(tsv_texto: str):
 def render_fechamento_lote(tag_logo, tag_logo_sidebar):
     st.markdown(
         f"""
-        <div style="display:flex;align-items:center;gap:14px;margin-bottom:6px;padding-bottom:4px;">
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;">
             {tag_logo}
-            <div>
-                <div class="main-header">Consigaz — Fechamento em Lote & Leitor de E-mails</div>
-                <div class="sub-header">Arraste múltiplos e-mails (.msg) ou planilhas (.xlsx) recebidas para extração instantânea do consolidado, conferência e cópia direta para o Excel</div>
-            </div>
+            <div class="main-header" style="font-size:22px;font-weight:700;">Fechamento de E-mails / Planilhas</div>
         </div>
         """,
         unsafe_allow_html=True
     )
-
-    st.sidebar.markdown(
-        f"""
-        <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
-            {tag_logo_sidebar}
-            <span style="font-size:18px;font-weight:800;color:#F8FAFC;letter-spacing:0.3px;">Opções do Fechamento</span>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
-
-    incluir_cabecalho = st.sidebar.checkbox(
-        "Incluir cabeçalho na cópia (Base, Assunto, Cód...)",
-        value=False,
-        help="Se marcado, a primeira linha copiada conterá os títulos das colunas."
-    )
-
-    with st.sidebar.expander("🔍 Histórico para Comparação (Opcional)", expanded=False):
-        arquivo_historico = st.file_uploader(
-            "Planilha de Controle Atual (.xlsx)",
-            type=["xlsx"],
-            help="Carregue sua planilha de controle atual para o sistema avisar se algum desses e-mails já tinha sido lançado anteriormente."
-        )
-
-    st.sidebar.markdown("---")
-    st.sidebar.markdown(
-        """
-        <div style="text-align: center; padding: 14px 10px; background-color: #1E293B; border-radius: 8px; border: 1.5px solid #334155; margin-top: 18px; box-shadow: 0 4px 12px rgba(0,0,0,0.3);">
-            <span style="font-size: 16px; font-weight: 800; color: #38BDF8; letter-spacing: 0.5px;">Desenvolvido por Chiku</span>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
-
-    st.markdown("### 📥 1. Carregar E-mails ou Planilhas em Lote")
-    st.caption("💡 **Adicione quantos arquivos quiser:** você pode ir soltando e-mails aos poucos (de 3 em 3 ou 4 em 4) que o sistema **vai acumulando todos na listinha abaixo** sem apagar os anteriores! O campo de envio fica sempre limpo e pronto para receber mais.")
 
     if "uploader_round" not in st.session_state:
         st.session_state["uploader_round"] = 0
     if "fechamento_arquivos_acumulados" not in st.session_state:
         st.session_state["fechamento_arquivos_acumulados"] = {}
 
-    arquivos_upload = st.file_uploader(
-        "➕ Arraste e solte arquivos aqui a qualquer momento (.xlsx, .xlsm ou .msg):",
-        type=["xlsx", "xlsm", "msg"],
-        accept_multiple_files=True,
-        key=f"upload_lote_fechamento_{st.session_state['uploader_round']}",
-        help="Solte quantos arquivos quiser. O sistema vai acumulando na listinha abaixo!"
-    )
+    col_up, col_btn = st.columns([5, 1])
+    with col_up:
+        arquivos_upload = st.file_uploader(
+            "Arraste e solte arquivos aqui (.xlsx, .xlsm ou .msg):",
+            type=["xlsx", "xlsm", "msg"],
+            accept_multiple_files=True,
+            key=f"upload_lote_fechamento_{st.session_state['uploader_round']}",
+            help="Arraste arquivos aqui a qualquer momento. Eles serão adicionados à tabela abaixo."
+        )
+    with col_btn:
+        st.write("")
+        if st.session_state["fechamento_arquivos_acumulados"]:
+            if st.button("🗑️ Limpar", use_container_width=True, help="Limpar toda a lista"):
+                st.session_state["fechamento_arquivos_acumulados"] = {}
+                st.session_state["uploader_round"] += 1
+                st.rerun()
 
-    # Acumula novos arquivos soltos sem substituir os anteriores e limpa a caixinha de upload
+    # Acumula novos arquivos
     if arquivos_upload:
         novos_inseridos = False
         for arq in arquivos_upload:
@@ -1093,185 +1063,44 @@ def render_fechamento_lote(tag_logo, tag_logo_sidebar):
     arquivos_acumulados = list(st.session_state["fechamento_arquivos_acumulados"].values())
 
     if arquivos_acumulados:
-        with st.spinner("Processando arquivos, aba CONSOLIDADO, fornecedores e valores..."):
-            chaves_hist = extrair_chaves_historico(arquivo_historico) if arquivo_historico else set()
-            registros = processar_lote(arquivos_acumulados, chaves_hist)
+        with st.spinner("Lendo arquivos..."):
+            registros = processar_lote(arquivos_acumulados)
 
-        # Mapeia o resultado para cada arquivo para diagnóstico imediato na lista
-        mapa_status = {}
-        for r in registros:
-            orig = r.get("origem", "")
-            nome_chave = None
-            if "E-mail:" in orig:
-                nome_chave = orig.replace("E-mail:", "").strip()
-            if not nome_chave or nome_chave not in st.session_state["fechamento_arquivos_acumulados"]:
-                nome_chave = r.get("arquivo")
+        # Monta a tabela limpa diretamente
+        df_view = pd.DataFrame([
+            {
+                "Base": r.get("base", ""),
+                "Identificação / Assunto": r.get("identificacao", ""),
+                "Código / CNPJ": r.get("codigo_fornecedor", ""),
+                "Fornecedor": r.get("fornecedor", ""),
+                "Valor (R$)": r.get("valor", 0.0),
+                "Status": r.get("status", "PENDENTE"),
+                "Data": r.get("data", ""),
+                "Arquivo Original": r.get("arquivo", ""),
+                "Detalhes / Erro": r.get("detalhe_erro", "")
+            }
+            for r in registros
+        ])
 
-            if nome_chave not in mapa_status:
-                mapa_status[nome_chave] = []
-            mapa_status[nome_chave].append(r)
+        st.dataframe(
+            df_view,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Valor (R$)": st.column_config.NumberColumn(
+                    "Valor (R$)",
+                    format="R$ %.2f"
+                ),
+                "Base": st.column_config.TextColumn("Base", width="small"),
+                "Código / CNPJ": st.column_config.TextColumn("Código", width="small"),
+                "Status": st.column_config.TextColumn("Status", width="medium"),
+            }
+        )
 
-        # Cabeçalho da listinha com botão de limpar tudo
-        col_list_header, col_list_action = st.columns([3, 1.2])
-        with col_list_header:
-            st.markdown(f"#### 📋 Lista de Arquivos Adicionados ({len(arquivos_acumulados)} arquivo{'s' if len(arquivos_acumulados) != 1 else ''}):")
-        with col_list_action:
-            if st.button("🗑️ Limpar Todos", use_container_width=True, help="Zera toda a lista para começar um novo lote"):
-                st.session_state["fechamento_arquivos_acumulados"] = {}
-                st.session_state["uploader_round"] += 1
-                st.rerun()
-
-        # Renderiza cada item da lista com seu status individual (OK, Duplicado ou Erro) e botão de remover
-        for idx, arq_info in enumerate(arquivos_acumulados, 1):
-            nome_arq = arq_info["nome"]
-            tam_kb = arq_info["size"] / 1024
-            is_msg = nome_arq.upper().endswith(".MSG")
-            badge_tipo = "✉️ E-mail" if is_msg else "📊 Excel"
-            cor_badge_tipo = "#0284C7" if is_msg else "#0D9488"
-
-            status_itens = mapa_status.get(nome_arq, [])
-            tem_erro = any(str(it.get("status", "")).startswith("ERRO") for it in status_itens) or not status_itens
-            tem_duplicado = any("DUPLICADO" in str(it.get("status", "")).upper() for it in status_itens)
-
-            if tem_erro:
-                badge_status = '<span style="background-color:#EF4444;color:#FFFFFF;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700;">🚨 ERRO</span>'
-                motivo = status_itens[0].get("detalhe_erro") or status_itens[0].get("status") if status_itens else "Não foi possível extrair planilha válida."
-                detalhe_html = f'<div style="color:#FCA5A5;font-size:12px;margin-top:4px;"><b>Motivo:</b> {motivo}</div>'
-                cor_borda = "#EF4444"
-                bg_item = "#29151B"
-            elif tem_duplicado:
-                badge_status = '<span style="background-color:#F59E0B;color:#FFFFFF;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700;">⚠️ DUPLICADO</span>'
-                detalhe_html = f'<div style="color:#FCD34D;font-size:12px;margin-top:4px;"><b>Alerta:</b> {status_itens[0].get("detalhe_erro")}</div>'
-                cor_borda = "#F59E0B"
-                bg_item = "#2A2415"
-            else:
-                badge_status = '<span style="background-color:#10B981;color:#FFFFFF;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700;">✅ OK</span>'
-                info_ok = []
-                for it in status_itens:
-                    info_ok.append(f'Base: <b>{it.get("base")}</b> &bull; Fornecedor: <b>{it.get("fornecedor")}</b> &bull; Valor: <b>{formatar_moeda_br(it.get("valor"))}</b>')
-                detalhe_html = f'<div style="color:#86EFAC;font-size:12px;margin-top:4px;">{" | ".join(info_ok)}</div>'
-                cor_borda = "#10B981"
-                bg_item = "#0F291E"
-
-            col_card, col_del = st.columns([10.5, 1.2])
-            with col_card:
-                st.markdown(
-                    f'''<div style="background-color:{bg_item};border:1px solid {cor_borda};border-radius:8px;padding:10px 14px;margin-bottom:6px;">
-                        <div style="display:flex;align-items:center;justify-content:space-between;">
-                            <div style="display:flex;align-items:center;gap:10px;">
-                                <span style="font-weight:800;color:#38BDF8;font-size:13px;width:24px;">#{idx}</span>
-                                <span style="background-color:{cor_badge_tipo};color:#FFFFFF;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700;">{badge_tipo}</span>
-                                {badge_status}
-                                <span style="font-weight:600;color:#F8FAFC;font-size:14px;">{nome_arq}</span>
-                            </div>
-                            <span style="color:#94A3B8;font-size:12px;font-weight:600;">{tam_kb:,.1f} KB</span>
-                        </div>
-                        {detalhe_html}
-                    </div>''',
-                    unsafe_allow_html=True
-                )
-            with col_del:
-                if st.button("❌", key=f"del_{idx}_{nome_arq}", help=f"Remover {nome_arq}"):
-                    del st.session_state["fechamento_arquivos_acumulados"][nome_arq]
-                    st.session_state["uploader_round"] += 1
-                    st.rerun()
-
-        st.markdown("<div style='height: 8px;'></div>", unsafe_allow_html=True)
-
-        total_arquivos = len(registros)
-        valor_total = sum(r.get("valor", 0.0) or 0.0 for r in registros if not str(r.get("status", "")).startswith("ERRO"))
-        duplicados = [r for r in registros if "DUPLICADO" in str(r.get("status", "")).upper()]
-        erros = [r for r in registros if "ERRO" in str(r.get("status", "")).upper()]
-        ok_count = total_arquivos - len(duplicados) - len(erros)
-
-        col_k1, col_k2, col_k3, col_k4 = st.columns(4)
-        with col_k1:
-            st.metric("Total Processado", f"{total_arquivos} itens")
-        with col_k2:
-            st.metric("Valor Total Consolidado", formatar_moeda_br(valor_total))
-        with col_k3:
-            st.metric("Prontos / OK", f"{ok_count} itens")
-        with col_k4:
-            st.metric("Alertas / Atenção", f"{len(duplicados) + len(erros)} itens")
-
-        if duplicados:
-            st.warning(f"⚠️ Atenção: Detectamos **{len(duplicados)} fechamento(s) duplicado(s)** no lote ou histórico. Verifique antes de colar no Excel.")
-        if erros:
-            st.error(f"🚨 Existem **{len(erros)} arquivo(s) com erro** de leitura ou sem aba CONSOLIDADO.")
-
-        st.markdown("---")
-        st.markdown("### 📊 2. Grade de Fechamento (Visualização e Conferência)")
-
-        col_f1, col_f2 = st.columns(2)
-        with col_f1:
-            bases_disp = sorted(list(set(r.get("base", "N/D") for r in registros)))
-            filtro_bases = st.multiselect("Filtrar por Base:", options=bases_disp, default=bases_disp)
-        with col_f2:
-            status_disp = sorted(list(set(r.get("status", "") for r in registros)))
-            filtro_status = st.multiselect("Filtrar por Status:", options=status_disp, default=status_disp)
-
-        registros_filtrados = [
-            r for r in registros
-            if r.get("base") in filtro_bases and r.get("status") in filtro_status
-        ]
-
-        if not registros_filtrados:
-            st.info("Nenhum registro corresponde aos filtros selecionados acima.")
-        else:
-            df_view = pd.DataFrame([
-                {
-                    "Base": r.get("base", ""),
-                    "Identificação / Assunto": r.get("identificacao", ""),
-                    "Código / CNPJ": r.get("codigo_fornecedor", ""),
-                    "Fornecedor": r.get("fornecedor", ""),
-                    "Valor (R$)": r.get("valor", 0.0),
-                    "Status": r.get("status", "PENDENTE"),
-                    "Data": r.get("data", ""),
-                    "Arquivo Original": r.get("arquivo", ""),
-                    "Avisos / Detalhes": r.get("detalhe_erro", "")
-                }
-                for r in registros_filtrados
-            ])
-
-            st.dataframe(
-                df_view,
-                use_container_width=True,
-                hide_index=True,
-                column_config={
-                    "Valor (R$)": st.column_config.NumberColumn(
-                        "Valor (R$)",
-                        format="R$ %.2f"
-                    ),
-                    "Base": st.column_config.TextColumn("Base", width="small"),
-                    "Código / CNPJ": st.column_config.TextColumn("Código / CNPJ", width="small"),
-                    "Status": st.column_config.TextColumn("Status", width="medium"),
-                }
-            )
-
-            st.markdown("### 📋 3. Copiar e Colar no Excel ou Baixar")
-            tsv_texto = gerar_tsv_colar_excel(registros_filtrados, incluir_cabecalho=incluir_cabecalho)
-
-            col_btn1, col_btn2 = st.columns([1.2, 1])
-            with col_btn1:
-                render_botao_copiar_clipboard(tsv_texto)
-            with col_btn2:
-                excel_bytes = gerar_excel_fechamento(registros_filtrados)
-                nome_dl = f"Fechamento_Consolidado_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
-                st.download_button(
-                    label="📥 Baixar Planilha Consolidada (.xlsx)",
-                    data=excel_bytes,
-                    file_name=nome_dl,
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    use_container_width=True
-                )
-
-            with st.expander("👁️ Ver texto tabulado para cópia manual (Ctrl+A e Ctrl+C)", expanded=False):
-                st.caption("Você também pode selecionar o texto abaixo e copiar diretamente para a planilha do Excel:")
-                st.code(tsv_texto, language=None)
+        tsv_texto = gerar_tsv_colar_excel(registros, incluir_cabecalho=False)
+        render_botao_copiar_clipboard(tsv_texto)
     else:
-        st.info("👆 Arraste e solte seus e-mails (.msg) ou planilhas (.xlsx) no campo acima para carregar a grade automaticamente.")
-
-
+        st.info("👆 Arraste e solte arquivos de e-mail (.msg) ou planilhas (.xlsx) no campo acima para carregar as linhas.")
 
 st.sidebar.markdown(
     f"""
