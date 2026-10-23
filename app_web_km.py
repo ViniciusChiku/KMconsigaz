@@ -1997,8 +1997,8 @@ def render_fechamento_lote(tag_logo, tag_logo_sidebar):
     col_up, col_btn = st.columns([5, 1])
     with col_up:
         arquivos_upload = st.file_uploader(
-            "Arraste e solte arquivos aqui (.xlsx, .xlsm ou .msg):",
-            type=["xlsx", "xlsm", "msg"],
+            "Arraste e solte arquivos aqui (.xlsx, .xlsm, .msg ou .eml):",
+            type=["xlsx", "xlsm", "msg", "eml"],
             accept_multiple_files=True,
             key=f"upload_lote_fechamento_{st.session_state['uploader_round']}",
             help="Arraste arquivos aqui a qualquer momento. Eles serão adicionados à tabela abaixo."
@@ -2121,7 +2121,7 @@ def render_fechamento_lote(tag_logo, tag_logo_sidebar):
         tsv_texto = gerar_tsv_colar_excel(todos_registros, incluir_cabecalho=False)
         render_botao_copiar_clipboard(tsv_texto)
     else:
-        st.info("👆 Arraste e solte arquivos de e-mail (.msg) ou planilhas (.xlsx) no campo acima para carregar as linhas.")
+        st.info("👆 Arraste e solte arquivos de e-mail (.msg / .eml) ou planilhas (.xlsx) no campo acima para carregar as linhas.")
 
 st.sidebar.markdown(
     f'<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">{tag_logo_sidebar}<span style="font-size:16px;font-weight:800;color:#38BDF8;letter-spacing:0.5px;">CONSIGAZ TOOLS</span></div>',

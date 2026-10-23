@@ -298,6 +298,103 @@ def processar_arquivo_uploaded(uploaded_file):
                 except Exception:
                     pass
 
+    elif nome_upper.endswith(".EML"):
+        import email
+        from email import policy
+        import email.utils
+
+        try:
+            msg = email.message_from_bytes(conteudo_bytes, policy=policy.default)
+            assunto_original = str(msg.get("subject") or "")
+            assunto_limpo = limpar_assunto(assunto_original)
+            remetente = str(msg.get("from") or "")
+            data_msg_header = msg.get("date")
+
+            data_str = ""
+            if data_msg_header:
+                try:
+                    dt = email.utils.parsedate_to_datetime(data_msg_header)
+                    if dt:
+                        data_str = dt.strftime("%d/%m/%Y")
+                except Exception:
+                    pass
+            if not data_str:
+                data_str = datetime.now().strftime("%d/%m/%Y")
+
+            anexos_excel = []
+            for part in msg.iter_attachments():
+                att_nome = part.get_filename() or ""
+                if att_nome.upper().endswith((".XLSX", ".XLSM")):
+                    anexos_excel.append((att_nome, part.get_content()))
+
+            if not anexos_excel:
+                base_assunto = encontrar_base(assunto_original) or "N/D"
+                registros.append({
+                    "base": base_assunto,
+                    "identificacao": assunto_limpo or nome_orig,
+                    "codigo_fornecedor": "",
+                    "fornecedor": remetente or "Nenhum Fornecedor",
+                    "valor": 0.0,
+                    "status": "ERRO: Sem anexo Excel",
+                    "data": data_str,
+                    "arquivo": nome_orig,
+                    "origem": "E-mail (.eml)",
+                    "detalhe_erro": "E-mail recebido sem planilha Excel anexa.",
+                    "arquivo_chave": nome_orig
+                })
+                return registros
+
+            for att_nome, att_bytes in anexos_excel:
+                try:
+                    dados = extrair_dados_de_planilha(att_bytes, att_nome)
+                    base_final = dados["base"]
+                    if base_final == "N/D" or not base_final:
+                        base_final = encontrar_base(assunto_original) or "N/D"
+
+                    identificacao = assunto_limpo if assunto_limpo else os.path.splitext(att_nome)[0]
+
+                    registros.append({
+                        "base": base_final,
+                        "identificacao": identificacao,
+                        "codigo_fornecedor": dados["codigo_fornecedor"],
+                        "fornecedor": dados["fornecedor"] or remetente,
+                        "valor": dados["valor"],
+                        "status": "PENDENTE",
+                        "data": data_str,
+                        "arquivo": att_nome,
+                        "origem": f"E-mail: {nome_orig}",
+                        "detalhe_erro": "",
+                        "arquivo_chave": nome_orig
+                    })
+                except Exception as err_att:
+                    registros.append({
+                        "base": encontrar_base(assunto_original) or encontrar_base(att_nome) or "N/D",
+                        "identificacao": assunto_limpo or att_nome,
+                        "codigo_fornecedor": "",
+                        "fornecedor": remetente or "N/D",
+                        "valor": 0.0,
+                        "status": f"ERRO: {str(err_att)[:40]}",
+                        "data": data_str,
+                        "arquivo": att_nome,
+                        "origem": f"E-mail: {nome_orig}",
+                        "detalhe_erro": str(err_att),
+                        "arquivo_chave": nome_orig
+                    })
+        except Exception as e:
+            registros.append({
+                "base": "N/D",
+                "identificacao": nome_orig,
+                "codigo_fornecedor": "",
+                "fornecedor": "ERRO",
+                "valor": 0.0,
+                "status": f"ERRO: {str(e)[:40]}",
+                "data": datetime.now().strftime("%d/%m/%Y"),
+                "arquivo": nome_orig,
+                "origem": "E-mail (.eml)",
+                "detalhe_erro": str(e),
+                "arquivo_chave": nome_orig
+            })
+
     elif nome_upper.endswith((".XLSX", ".XLSM")):
         try:
             dados = extrair_dados_de_planilha(conteudo_bytes, nome_orig)
