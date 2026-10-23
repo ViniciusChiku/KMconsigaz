@@ -1012,126 +1012,146 @@ def render_botao_copiar_clipboard(tsv_texto: str):
     components.html(html_code, height=75)
 
 
-def render_fechamento_lote(tag_logo, tag_logo_sidebar):
-    st.markdown(
-        f"""
-        <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;">
-            {tag_logo}
-            <div class="main-header" style="font-size:22px;font-weight:700;">Fechamento de E-mails / Planilhas</div>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
-
-    if "uploader_round" not in st.session_state:
-        st.session_state["uploader_round"] = 0
-    if "fechamento_arquivos_acumulados" not in st.session_state:
-        st.session_state["fechamento_arquivos_acumulados"] = {}
-
-    col_up, col_btn = st.columns([5, 1])
-    with col_up:
-        arquivos_upload = st.file_uploader(
-            "Arraste e solte arquivos aqui (.xlsx, .xlsm ou .msg):",
-            type=["xlsx", "xlsm", "msg"],
-            accept_multiple_files=True,
-            key=f"upload_lote_fechamento_{st.session_state['uploader_round']}",
-            help="Arraste arquivos aqui a qualquer momento. Eles serão adicionados à tabela abaixo."
-        )
-    with col_btn:
-        st.write("")
-        if st.session_state["fechamento_arquivos_acumulados"]:
-            if st.button("🗑️ Limpar", use_container_width=True, help="Limpar toda a lista"):
-                st.session_state["fechamento_arquivos_acumulados"] = {}
-                st.session_state["uploader_round"] += 1
-                st.rerun()
-
-    # Acumula novos arquivos
-    if arquivos_upload:
-        novos_inseridos = False
-        for arq in arquivos_upload:
-            if arq.name not in st.session_state["fechamento_arquivos_acumulados"]:
-                st.session_state["fechamento_arquivos_acumulados"][arq.name] = {
-                    "nome": arq.name,
-                    "size": arq.size,
-                    "bytes": arq.getvalue()
-                }
-                novos_inseridos = True
-        if novos_inseridos:
-            st.session_state["uploader_round"] += 1
-            st.rerun()
-
-    arquivos_acumulados = list(st.session_state["fechamento_arquivos_acumulados"].values())
-
-    if arquivos_acumulados:
-        with st.spinner("Lendo arquivos..."):
-            registros = processar_lote(arquivos_acumulados)
-
-        # Monta a tabela limpa diretamente apenas com as colunas necessárias para o Excel
-        df_view = pd.DataFrame([
-            {
-                "Base": r.get("base", ""),
-                "Identificação / Assunto": r.get("identificacao", ""),
-                "Código / CNPJ": r.get("codigo_fornecedor", ""),
-                "Fornecedor": r.get("fornecedor", ""),
-                "Valor (R$)": r.get("valor", 0.0),
-                "Status": r.get("status", "PENDENTE"),
-                "Data": r.get("data", ""),
-            }
-            for r in registros
-        ])
-
-        # Exibe a tabela interativa com suporte a seleção de linha para exclusão
-        tabela_evento = st.dataframe(
-            df_view,
-            use_container_width=True,
-            hide_index=True,
-            on_select="rerun",
-            selection_mode="multi-row",
-            column_config={
-                "Valor (R$)": st.column_config.NumberColumn(
-                    "Valor (R$)",
-                    format="R$ %.2f"
-                ),
-                "Base": st.column_config.TextColumn("Base", width="small"),
-                "Código / CNPJ": st.column_config.TextColumn("Código / CNPJ", width="small"),
-                "Status": st.column_config.TextColumn("Status", width="medium"),
-            }
-        )
-
-        linhas_selecionadas = tabela_evento.selection.rows if hasattr(tabela_evento, "selection") and tabela_evento.selection else []
-        erros_indices = [i for i, r in enumerate(registros) if str(r.get("status", "")).startswith("ERRO")]
-
-        if linhas_selecionadas or erros_indices:
-            col_del1, col_del2 = st.columns([1.2, 1.2])
-            if linhas_selecionadas:
-                with col_del1:
-                    qtd_sel = len(linhas_selecionadas)
-                    if st.button(f"🗑️ Excluir Linha{'s' if qtd_sel > 1 else ''} Selecionada{'s' if qtd_sel > 1 else ''} ({qtd_sel})", use_container_width=True):
-                        for idx in linhas_selecionadas:
-                            if idx < len(registros):
-                                chave = registros[idx].get("arquivo_chave")
-                                if chave in st.session_state["fechamento_arquivos_acumulados"]:
-                                    del st.session_state["fechamento_arquivos_acumulados"][chave]
-                        st.session_state["uploader_round"] += 1
-                        st.rerun()
-
-            if erros_indices:
-                with col_del2:
-                    qtd_err = len(erros_indices)
-                    if st.button(f"🧹 Excluir Linhas com Erro ({qtd_err})", use_container_width=True, help="Remove automaticamente todos os itens que apresentaram erro"):
-                        for idx in erros_indices:
-                            if idx < len(registros):
-                                chave = registros[idx].get("arquivo_chave")
-                                if chave in st.session_state["fechamento_arquivos_acumulados"]:
-                                    del st.session_state["fechamento_arquivos_acumulados"][chave]
-                        st.session_state["uploader_round"] += 1
-                        st.rerun()
-
-        tsv_texto = gerar_tsv_colar_excel(registros, incluir_cabecalho=False)
-        render_botao_copiar_clipboard(tsv_texto)
-    else:
-        st.info("👆 Arraste e solte arquivos de e-mail (.msg) ou planilhas (.xlsx) no campo acima para carregar as linhas.")
-
+def render_fechamento_lote(tag_logo, tag_logo_sidebar):
+    st.markdown(
+        f'<div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;">{tag_logo}<div class="main-header" style="font-size:22px;font-weight:700;">Fechamento de E-mails / Planilhas</div></div>',
+        unsafe_allow_html=True
+    )
+
+    if "uploader_round" not in st.session_state:
+        st.session_state["uploader_round"] = 0
+    if "fechamento_dados" not in st.session_state:
+        st.session_state["fechamento_dados"] = {}
+
+    col_up, col_btn = st.columns([5, 1])
+    with col_up:
+        arquivos_upload = st.file_uploader(
+            "Arraste e solte arquivos aqui (.xlsx, .xlsm ou .msg):",
+            type=["xlsx", "xlsm", "msg"],
+            accept_multiple_files=True,
+            key=f"upload_lote_fechamento_{st.session_state['uploader_round']}",
+            help="Arraste arquivos aqui a qualquer momento. Eles serão adicionados à tabela abaixo."
+        )
+    with col_btn:
+        st.write("")
+        if st.session_state["fechamento_dados"]:
+            if st.button("🗑️ Limpar", use_container_width=True, help="Limpar toda a tabela"):
+                st.session_state["fechamento_dados"] = {}
+                st.session_state["uploader_round"] += 1
+                st.rerun()
+
+    # Processa APENAS os novos arquivos que acabaram de ser soltos (uma única vez!)
+    if arquivos_upload:
+        novos = [arq for arq in arquivos_upload if arq.name not in st.session_state["fechamento_dados"]]
+        if novos:
+            with st.spinner(f"Lendo {len(novos)} novo(s) arquivo(s)..."):
+                for arq in novos:
+                    try:
+                        itens = processar_arquivo_uploaded(arq)
+                    except Exception as e:
+                        itens = [{
+                            "base": "N/D",
+                            "identificacao": arq.name,
+                            "codigo_fornecedor": "",
+                            "fornecedor": "ERRO",
+                            "valor": 0.0,
+                            "status": f"ERRO: {str(e)[:40]}",
+                            "data": datetime.now().strftime("%d/%m/%Y"),
+                            "arquivo": arq.name,
+                            "origem": "Falha de Leitura",
+                            "detalhe_erro": str(e),
+                            "arquivo_chave": arq.name
+                        }]
+                    st.session_state["fechamento_dados"][arq.name] = itens
+            st.session_state["uploader_round"] += 1
+            st.rerun()
+
+    # Junta todos os registros armazenados em memória (instantâneo, sem reler nada!)
+    todos_registros = []
+    for lista_itens in st.session_state["fechamento_dados"].values():
+        todos_registros.extend(lista_itens)
+
+    if todos_registros:
+        # Checagem ultrarrápida de duplicados em memória (0.001s)
+        chaves_vistas = set()
+        for item in todos_registros:
+            if not str(item.get("status", "")).startswith("ERRO"):
+                b = str(item.get("base") or "").strip().upper()
+                f = str(item.get("fornecedor") or "").strip().upper()
+                c = str(item.get("codigo_fornecedor") or "").strip().upper()
+                v = normalizar_valor(item.get("valor"))
+                if v and v > 0:
+                    chave = (b, c or f, v)
+                    if chave in chaves_vistas:
+                        item["status"] = "DUPLICADO"
+                    else:
+                        item["status"] = "PENDENTE"
+                        chaves_vistas.add(chave)
+
+        # Monta a tabela limpa diretamente apenas com as colunas necessárias para o Excel
+        df_view = pd.DataFrame([
+            {
+                "Base": r.get("base", ""),
+                "Identificação / Assunto": r.get("identificacao", ""),
+                "Código / CNPJ": r.get("codigo_fornecedor", ""),
+                "Fornecedor": r.get("fornecedor", ""),
+                "Valor (R$)": r.get("valor", 0.0),
+                "Status": r.get("status", "PENDENTE"),
+                "Data": r.get("data", ""),
+            }
+            for r in todos_registros
+        ])
+
+        # Exibe a tabela interativa sem nenhum delay ao clicar!
+        tabela_evento = st.dataframe(
+            df_view,
+            use_container_width=True,
+            hide_index=True,
+            on_select="rerun",
+            selection_mode="multi-row",
+            column_config={
+                "Valor (R$)": st.column_config.NumberColumn(
+                    "Valor (R$)",
+                    format="R$ %.2f"
+                ),
+                "Base": st.column_config.TextColumn("Base", width="small"),
+                "Código / CNPJ": st.column_config.TextColumn("Código / CNPJ", width="small"),
+                "Status": st.column_config.TextColumn("Status", width="medium"),
+            }
+        )
+
+        linhas_selecionadas = tabela_evento.selection.rows if hasattr(tabela_evento, "selection") and tabela_evento.selection else []
+        erros_indices = [i for i, r in enumerate(todos_registros) if str(r.get("status", "")).startswith("ERRO")]
+
+        if linhas_selecionadas or erros_indices:
+            col_del1, col_del2 = st.columns([1.2, 1.2])
+            if linhas_selecionadas:
+                with col_del1:
+                    qtd_sel = len(linhas_selecionadas)
+                    if st.button(f"🗑️ Excluir Linha{'s' if qtd_sel > 1 else ''} Selecionada{'s' if qtd_sel > 1 else ''} ({qtd_sel})", use_container_width=True):
+                        for idx in linhas_selecionadas:
+                            if idx < len(todos_registros):
+                                chave = todos_registros[idx].get("arquivo_chave")
+                                if chave in st.session_state["fechamento_dados"]:
+                                    del st.session_state["fechamento_dados"][chave]
+                        st.rerun()
+
+            if erros_indices:
+                with col_del2:
+                    qtd_err = len(erros_indices)
+                    if st.button(f"🧹 Excluir Linhas com Erro ({qtd_err})", use_container_width=True, help="Remove automaticamente todos os itens que apresentaram erro"):
+                        for idx in erros_indices:
+                            if idx < len(todos_registros):
+                                chave = todos_registros[idx].get("arquivo_chave")
+                                if chave in st.session_state["fechamento_dados"]:
+                                    del st.session_state["fechamento_dados"][chave]
+                        st.rerun()
+
+        tsv_texto = gerar_tsv_colar_excel(todos_registros, incluir_cabecalho=False)
+        render_botao_copiar_clipboard(tsv_texto)
+    else:
+        st.info("👆 Arraste e solte arquivos de e-mail (.msg) ou planilhas (.xlsx) no campo acima para carregar as linhas.")
+
 st.sidebar.markdown(
     f"""
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
