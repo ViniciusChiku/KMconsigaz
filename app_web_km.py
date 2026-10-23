@@ -376,6 +376,52 @@ div[data-baseweb="select"] > div {
     margin-top: 2px;
     line-height: 1.4;
 }
+
+/* Transforma os quadradinhos do uploader em lista vertical (listinha) */
+[data-testid="stFileUploaderFileList"] {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 8px !important;
+    width: 100% !important;
+    margin-top: 10px !important;
+}
+
+[data-testid="stFileUploaderFile"] {
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    width: 100% !important;
+    background-color: #1E293B !important;
+    border: 1px solid #334155 !important;
+    border-radius: 8px !important;
+    padding: 10px 14px !important;
+    margin: 0 !important;
+}
+
+[data-testid="stFileUploaderFileName"] {
+    color: #F8FAFC !important;
+    font-weight: 600 !important;
+    font-size: 14px !important;
+}
+
+.item-lista-arquivo {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background-color: #1E293B;
+    border: 1px solid #334155;
+    border-radius: 8px;
+    padding: 9px 14px;
+    margin-bottom: 6px;
+    font-size: 13.5px;
+    transition: all 0.2s ease;
+}
+
+.item-lista-arquivo:hover {
+    border-color: #38BDF8;
+    background-color: #243248;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -1034,18 +1080,64 @@ def render_fechamento_lote(tag_logo, tag_logo_sidebar):
     )
 
     st.markdown("### 📥 1. Carregar E-mails ou Planilhas em Lote")
+    st.caption("💡 **Dica:** Você pode ir soltando e-mails aos poucos (de 3 em 3 ou 4 em 4) que o sistema **vai acumulando todos na listinha** sem apagar os anteriores! Ou selecione vários de uma pasta para subir dezenas de uma só vez.")
+
+    if "fechamento_arquivos_acumulados" not in st.session_state:
+        st.session_state["fechamento_arquivos_acumulados"] = {}
+
     arquivos_upload = st.file_uploader(
-        "Arraste e solte múltiplos arquivos (.xlsx, .xlsm ou .msg do Outlook):",
+        "Arraste e solte arquivos aqui (.xlsx, .xlsm ou .msg do Outlook):",
         type=["xlsx", "xlsm", "msg"],
         accept_multiple_files=True,
         key="upload_lote_fechamento",
-        help="Você pode arrastar diretamente os anexos Excel (.xlsx) ou os e-mails salvos do Outlook (.msg)"
+        help="Você pode arrastar diretamente anexos ou e-mails salvos"
     )
 
+    # Acumula novos arquivos soltos sem substituir os anteriores
     if arquivos_upload:
+        for arq in arquivos_upload:
+            if arq.name not in st.session_state["fechamento_arquivos_acumulados"]:
+                st.session_state["fechamento_arquivos_acumulados"][arq.name] = {
+                    "nome": arq.name,
+                    "size": arq.size,
+                    "bytes": arq.getvalue()
+                }
+
+    arquivos_acumulados = list(st.session_state["fechamento_arquivos_acumulados"].values())
+
+    if arquivos_acumulados:
+        # Exibe cabeçalho da listinha com botão de limpar
+        col_list_header, col_list_action = st.columns([3, 1])
+        with col_list_header:
+            st.markdown(f"#### 📋 Lista de Arquivos Adicionados ({len(arquivos_acumulados)} arquivo{'s' if len(arquivos_acumulados) != 1 else ''}):")
+        with col_list_action:
+            if st.button("🗑️ Limpar Lista de Arquivos", use_container_width=True, help="Zera a lista de arquivos para iniciar um novo fechamento"):
+                st.session_state["fechamento_arquivos_acumulados"] = {}
+                st.rerun()
+
+        # Renderiza a Listinha Vertical com numeração, ícone e tamanho
+        linhas_lista = []
+        for idx, arq_info in enumerate(arquivos_acumulados, 1):
+            tam_kb = arq_info["size"] / 1024
+            is_msg = arq_info["nome"].upper().endswith(".MSG")
+            badge_tipo = "✉️ E-mail" if is_msg else "📊 Excel"
+            cor_badge = "#0284C7" if is_msg else "#10B981"
+            linhas_lista.append(
+                f'''<div class="item-lista-arquivo">
+                    <div style="display:flex;align-items:center;gap:12px;">
+                        <span style="font-weight:800;color:#38BDF8;font-size:13px;width:26px;">#{idx}</span>
+                        <span style="background-color:{cor_badge};color:#FFFFFF;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700;">{badge_tipo}</span>
+                        <span style="font-weight:600;color:#F8FAFC;font-size:14px;">{arq_info['nome']}</span>
+                    </div>
+                    <span style="color:#94A3B8;font-size:12.5px;font-weight:600;">{tam_kb:,.1f} KB</span>
+                </div>'''
+            )
+        st.markdown("\n".join(linhas_lista), unsafe_allow_html=True)
+        st.markdown("<div style='height: 8px;'></div>", unsafe_allow_html=True)
+
         with st.spinner("Processando arquivos, aba CONSOLIDADO, fornecedores e valores..."):
             chaves_hist = extrair_chaves_historico(arquivo_historico) if arquivo_historico else set()
-            registros = processar_lote(arquivos_upload, chaves_hist)
+            registros = processar_lote(arquivos_acumulados, chaves_hist)
 
         total_arquivos = len(registros)
         valor_total = sum(r.get("valor", 0.0) or 0.0 for r in registros if not str(r.get("status", "")).startswith("ERRO"))

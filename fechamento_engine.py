@@ -182,12 +182,23 @@ def extrair_dados_de_planilha(conteudo_ou_stream, nome_arquivo=""):
 def processar_arquivo_uploaded(uploaded_file):
     """
     Processa um arquivo carregado via Streamlit (podendo ser .xlsx/.xlsm ou .msg).
+    Suporta tanto o objeto UploadedFile do Streamlit quanto um dicionário com {'nome': ..., 'bytes': ...}.
     Retorna uma lista de dicionários com os registros extraídos.
     """
-    if hasattr(uploaded_file, "seek"):
-        uploaded_file.seek(0)
+    if isinstance(uploaded_file, dict):
+        nome_orig = uploaded_file.get("nome") or uploaded_file.get("name", "arquivo.xlsx")
+        conteudo_bytes = uploaded_file.get("bytes", b"")
+    else:
+        if hasattr(uploaded_file, "seek"):
+            uploaded_file.seek(0)
+        nome_orig = uploaded_file.name
+        if hasattr(uploaded_file, "getvalue"):
+            conteudo_bytes = uploaded_file.getvalue()
+        elif hasattr(uploaded_file, "getbuffer"):
+            conteudo_bytes = bytes(uploaded_file.getbuffer())
+        else:
+            conteudo_bytes = uploaded_file.read()
 
-    nome_orig = uploaded_file.name
     nome_upper = nome_orig.upper()
     registros = []
 
@@ -197,7 +208,7 @@ def processar_arquivo_uploaded(uploaded_file):
 
         # Salva em arquivo temporário para leitura segura pelo extract_msg
         with tempfile.NamedTemporaryFile(delete=False, suffix=".msg") as tmp:
-            tmp.write(uploaded_file.getbuffer())
+            tmp.write(conteudo_bytes)
             tmp_path = tmp.name
 
         try:
@@ -285,7 +296,6 @@ def processar_arquivo_uploaded(uploaded_file):
                     pass
 
     elif nome_upper.endswith((".XLSX", ".XLSM")):
-        conteudo_bytes = uploaded_file.read()
         try:
             dados = extrair_dados_de_planilha(conteudo_bytes, nome_orig)
             nome_sem_ext = os.path.splitext(nome_orig)[0]
@@ -365,15 +375,16 @@ def processar_lote(arquivos_upload, chaves_historico=None):
             itens = processar_arquivo_uploaded(arq)
             todos_registros.extend(itens)
         except Exception as e:
+            nome_arq = arq.get("nome") if isinstance(arq, dict) else getattr(arq, "name", "Arquivo")
             todos_registros.append({
                 "base": "N/D",
-                "identificacao": arq.name,
+                "identificacao": nome_arq,
                 "codigo_fornecedor": "",
                 "fornecedor": "ERRO",
                 "valor": 0.0,
                 "status": f"ERRO: {str(e)[:40]}",
                 "data": datetime.now().strftime("%d/%m/%Y"),
-                "arquivo": arq.name,
+                "arquivo": nome_arq,
                 "origem": "Falha de Leitura",
                 "detalhe_erro": str(e)
             })
