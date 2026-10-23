@@ -249,7 +249,8 @@ def processar_arquivo_uploaded(uploaded_file):
                         "data": data_str,
                         "arquivo": nome_orig,
                         "origem": "E-mail (.msg)",
-                        "detalhe_erro": "E-mail recebido sem planilha Excel anexa."
+                        "detalhe_erro": "E-mail recebido sem planilha Excel anexa.",
+                        "arquivo_chave": nome_orig
                     })
                     return registros
 
@@ -273,7 +274,8 @@ def processar_arquivo_uploaded(uploaded_file):
                             "data": data_str,
                             "arquivo": att_nome,
                             "origem": f"E-mail: {nome_orig}",
-                            "detalhe_erro": ""
+                            "detalhe_erro": "",
+                            "arquivo_chave": nome_orig
                         })
                     except Exception as err_att:
                         registros.append({
@@ -286,7 +288,8 @@ def processar_arquivo_uploaded(uploaded_file):
                             "data": data_str,
                             "arquivo": att_nome,
                             "origem": f"E-mail: {nome_orig}",
-                            "detalhe_erro": str(err_att)
+                            "detalhe_erro": str(err_att),
+                            "arquivo_chave": nome_orig
                         })
         finally:
             if os.path.exists(tmp_path):
@@ -311,7 +314,8 @@ def processar_arquivo_uploaded(uploaded_file):
                 "data": data_hoje,
                 "arquivo": nome_orig,
                 "origem": "Upload Direto (.xlsx)",
-                "detalhe_erro": ""
+                "detalhe_erro": "",
+                "arquivo_chave": nome_orig
             })
         except Exception as err_plan:
             registros.append({
@@ -324,7 +328,8 @@ def processar_arquivo_uploaded(uploaded_file):
                 "data": datetime.now().strftime("%d/%m/%Y"),
                 "arquivo": nome_orig,
                 "origem": "Upload Direto (.xlsx)",
-                "detalhe_erro": str(err_plan)
+                "detalhe_erro": str(err_plan),
+                "arquivo_chave": nome_orig
             })
 
     return registros
@@ -386,7 +391,8 @@ def processar_lote(arquivos_upload, chaves_historico=None):
                 "data": datetime.now().strftime("%d/%m/%Y"),
                 "arquivo": nome_arq,
                 "origem": "Falha de Leitura",
-                "detalhe_erro": str(e)
+                "detalhe_erro": str(e),
+                "arquivo_chave": nome_arq
             })
 
     # Verificação de duplicados
