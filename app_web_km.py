@@ -377,32 +377,12 @@ div[data-baseweb="select"] > div {
     line-height: 1.4;
 }
 
-/* Transforma os quadradinhos do uploader em lista vertical (listinha) */
-[data-testid="stFileUploaderFileList"] {
-    display: flex !important;
-    flex-direction: column !important;
-    gap: 8px !important;
-    width: 100% !important;
-    margin-top: 10px !important;
-}
-
-[data-testid="stFileUploaderFile"] {
-    display: flex !important;
-    flex-direction: row !important;
-    align-items: center !important;
-    justify-content: space-between !important;
-    width: 100% !important;
-    background-color: #1E293B !important;
-    border: 1px solid #334155 !important;
-    border-radius: 8px !important;
-    padding: 10px 14px !important;
-    margin: 0 !important;
-}
-
-[data-testid="stFileUploaderFileName"] {
-    color: #F8FAFC !important;
-    font-weight: 600 !important;
-    font-size: 14px !important;
+/* Esconde totalmente os quadradinhos brancos nativos do file uploader */
+[data-testid="stFileUploaderFileList"],
+[data-testid="stFileUploaderFile"],
+[data-testid="stFileUploader"] ul,
+[data-testid="stFileUploaderDropzone"] ul {
+    display: none !important;
 }
 
 .item-lista-arquivo {
@@ -1080,21 +1060,24 @@ def render_fechamento_lote(tag_logo, tag_logo_sidebar):
     )
 
     st.markdown("### 📥 1. Carregar E-mails ou Planilhas em Lote")
-    st.caption("💡 **Dica:** Você pode ir soltando e-mails aos poucos (de 3 em 3 ou 4 em 4) que o sistema **vai acumulando todos na listinha** sem apagar os anteriores! Ou selecione vários de uma pasta para subir dezenas de uma só vez.")
+    st.caption("💡 **Adicione quantos arquivos quiser:** você pode ir soltando e-mails aos poucos (de 3 em 3 ou 4 em 4) que o sistema **vai acumulando todos na listinha abaixo** sem apagar os anteriores! O campo de envio fica sempre limpo e pronto para receber mais.")
 
+    if "uploader_round" not in st.session_state:
+        st.session_state["uploader_round"] = 0
     if "fechamento_arquivos_acumulados" not in st.session_state:
         st.session_state["fechamento_arquivos_acumulados"] = {}
 
     arquivos_upload = st.file_uploader(
-        "Arraste e solte arquivos aqui (.xlsx, .xlsm ou .msg do Outlook):",
+        "➕ Arraste e solte arquivos aqui a qualquer momento (.xlsx, .xlsm ou .msg):",
         type=["xlsx", "xlsm", "msg"],
         accept_multiple_files=True,
-        key="upload_lote_fechamento",
-        help="Você pode arrastar diretamente anexos ou e-mails salvos"
+        key=f"upload_lote_fechamento_{st.session_state['uploader_round']}",
+        help="Solte quantos arquivos quiser. O sistema vai acumulando na listinha abaixo!"
     )
 
-    # Acumula novos arquivos soltos sem substituir os anteriores
+    # Acumula novos arquivos soltos sem substituir os anteriores e limpa a caixinha de upload
     if arquivos_upload:
+        novos_inseridos = False
         for arq in arquivos_upload:
             if arq.name not in st.session_state["fechamento_arquivos_acumulados"]:
                 st.session_state["fechamento_arquivos_acumulados"][arq.name] = {
@@ -1102,42 +1085,98 @@ def render_fechamento_lote(tag_logo, tag_logo_sidebar):
                     "size": arq.size,
                     "bytes": arq.getvalue()
                 }
+                novos_inseridos = True
+        if novos_inseridos:
+            st.session_state["uploader_round"] += 1
+            st.rerun()
 
     arquivos_acumulados = list(st.session_state["fechamento_arquivos_acumulados"].values())
 
     if arquivos_acumulados:
-        # Exibe cabeçalho da listinha com botão de limpar
-        col_list_header, col_list_action = st.columns([3, 1])
-        with col_list_header:
-            st.markdown(f"#### 📋 Lista de Arquivos Adicionados ({len(arquivos_acumulados)} arquivo{'s' if len(arquivos_acumulados) != 1 else ''}):")
-        with col_list_action:
-            if st.button("🗑️ Limpar Lista de Arquivos", use_container_width=True, help="Zera a lista de arquivos para iniciar um novo fechamento"):
-                st.session_state["fechamento_arquivos_acumulados"] = {}
-                st.rerun()
-
-        # Renderiza a Listinha Vertical com numeração, ícone e tamanho
-        linhas_lista = []
-        for idx, arq_info in enumerate(arquivos_acumulados, 1):
-            tam_kb = arq_info["size"] / 1024
-            is_msg = arq_info["nome"].upper().endswith(".MSG")
-            badge_tipo = "✉️ E-mail" if is_msg else "📊 Excel"
-            cor_badge = "#0284C7" if is_msg else "#10B981"
-            linhas_lista.append(
-                f'''<div class="item-lista-arquivo">
-                    <div style="display:flex;align-items:center;gap:12px;">
-                        <span style="font-weight:800;color:#38BDF8;font-size:13px;width:26px;">#{idx}</span>
-                        <span style="background-color:{cor_badge};color:#FFFFFF;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700;">{badge_tipo}</span>
-                        <span style="font-weight:600;color:#F8FAFC;font-size:14px;">{arq_info['nome']}</span>
-                    </div>
-                    <span style="color:#94A3B8;font-size:12.5px;font-weight:600;">{tam_kb:,.1f} KB</span>
-                </div>'''
-            )
-        st.markdown("\n".join(linhas_lista), unsafe_allow_html=True)
-        st.markdown("<div style='height: 8px;'></div>", unsafe_allow_html=True)
-
         with st.spinner("Processando arquivos, aba CONSOLIDADO, fornecedores e valores..."):
             chaves_hist = extrair_chaves_historico(arquivo_historico) if arquivo_historico else set()
             registros = processar_lote(arquivos_acumulados, chaves_hist)
+
+        # Mapeia o resultado para cada arquivo para diagnóstico imediato na lista
+        mapa_status = {}
+        for r in registros:
+            orig = r.get("origem", "")
+            nome_chave = None
+            if "E-mail:" in orig:
+                nome_chave = orig.replace("E-mail:", "").strip()
+            if not nome_chave or nome_chave not in st.session_state["fechamento_arquivos_acumulados"]:
+                nome_chave = r.get("arquivo")
+
+            if nome_chave not in mapa_status:
+                mapa_status[nome_chave] = []
+            mapa_status[nome_chave].append(r)
+
+        # Cabeçalho da listinha com botão de limpar tudo
+        col_list_header, col_list_action = st.columns([3, 1.2])
+        with col_list_header:
+            st.markdown(f"#### 📋 Lista de Arquivos Adicionados ({len(arquivos_acumulados)} arquivo{'s' if len(arquivos_acumulados) != 1 else ''}):")
+        with col_list_action:
+            if st.button("🗑️ Limpar Todos", use_container_width=True, help="Zera toda a lista para começar um novo lote"):
+                st.session_state["fechamento_arquivos_acumulados"] = {}
+                st.session_state["uploader_round"] += 1
+                st.rerun()
+
+        # Renderiza cada item da lista com seu status individual (OK, Duplicado ou Erro) e botão de remover
+        for idx, arq_info in enumerate(arquivos_acumulados, 1):
+            nome_arq = arq_info["nome"]
+            tam_kb = arq_info["size"] / 1024
+            is_msg = nome_arq.upper().endswith(".MSG")
+            badge_tipo = "✉️ E-mail" if is_msg else "📊 Excel"
+            cor_badge_tipo = "#0284C7" if is_msg else "#0D9488"
+
+            status_itens = mapa_status.get(nome_arq, [])
+            tem_erro = any(str(it.get("status", "")).startswith("ERRO") for it in status_itens) or not status_itens
+            tem_duplicado = any("DUPLICADO" in str(it.get("status", "")).upper() for it in status_itens)
+
+            if tem_erro:
+                badge_status = '<span style="background-color:#EF4444;color:#FFFFFF;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700;">🚨 ERRO</span>'
+                motivo = status_itens[0].get("detalhe_erro") or status_itens[0].get("status") if status_itens else "Não foi possível extrair planilha válida."
+                detalhe_html = f'<div style="color:#FCA5A5;font-size:12px;margin-top:4px;"><b>Motivo:</b> {motivo}</div>'
+                cor_borda = "#EF4444"
+                bg_item = "#29151B"
+            elif tem_duplicado:
+                badge_status = '<span style="background-color:#F59E0B;color:#FFFFFF;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700;">⚠️ DUPLICADO</span>'
+                detalhe_html = f'<div style="color:#FCD34D;font-size:12px;margin-top:4px;"><b>Alerta:</b> {status_itens[0].get("detalhe_erro")}</div>'
+                cor_borda = "#F59E0B"
+                bg_item = "#2A2415"
+            else:
+                badge_status = '<span style="background-color:#10B981;color:#FFFFFF;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700;">✅ OK</span>'
+                info_ok = []
+                for it in status_itens:
+                    info_ok.append(f'Base: <b>{it.get("base")}</b> &bull; Fornecedor: <b>{it.get("fornecedor")}</b> &bull; Valor: <b>{formatar_moeda_br(it.get("valor"))}</b>')
+                detalhe_html = f'<div style="color:#86EFAC;font-size:12px;margin-top:4px;">{" | ".join(info_ok)}</div>'
+                cor_borda = "#10B981"
+                bg_item = "#0F291E"
+
+            col_card, col_del = st.columns([10.5, 1.2])
+            with col_card:
+                st.markdown(
+                    f'''<div style="background-color:{bg_item};border:1px solid {cor_borda};border-radius:8px;padding:10px 14px;margin-bottom:6px;">
+                        <div style="display:flex;align-items:center;justify-content:space-between;">
+                            <div style="display:flex;align-items:center;gap:10px;">
+                                <span style="font-weight:800;color:#38BDF8;font-size:13px;width:24px;">#{idx}</span>
+                                <span style="background-color:{cor_badge_tipo};color:#FFFFFF;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700;">{badge_tipo}</span>
+                                {badge_status}
+                                <span style="font-weight:600;color:#F8FAFC;font-size:14px;">{nome_arq}</span>
+                            </div>
+                            <span style="color:#94A3B8;font-size:12px;font-weight:600;">{tam_kb:,.1f} KB</span>
+                        </div>
+                        {detalhe_html}
+                    </div>''',
+                    unsafe_allow_html=True
+                )
+            with col_del:
+                if st.button("❌", key=f"del_{idx}_{nome_arq}", help=f"Remover {nome_arq}"):
+                    del st.session_state["fechamento_arquivos_acumulados"][nome_arq]
+                    st.session_state["uploader_round"] += 1
+                    st.rerun()
+
+        st.markdown("<div style='height: 8px;'></div>", unsafe_allow_html=True)
 
         total_arquivos = len(registros)
         valor_total = sum(r.get("valor", 0.0) or 0.0 for r in registros if not str(r.get("status", "")).startswith("ERRO"))
