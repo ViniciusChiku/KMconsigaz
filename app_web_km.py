@@ -19,17 +19,13 @@ from datetime import datetime
 
 
 from fechamento_engine import (
-
     processar_lote,
-
+    processar_arquivo_uploaded,
+    normalizar_valor,
     gerar_tsv_colar_excel,
-
     gerar_excel_fechamento,
-
     extrair_chaves_historico,
-
     formatar_moeda_br
-
 )
 
 
