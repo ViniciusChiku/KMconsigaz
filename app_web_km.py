@@ -52,6 +52,12 @@ from auditar_engine import (
 
 )
 
+from pedagio_engine import (
+    desempacotar_arquivos_pedagio,
+    processar_auditoria_pedagios,
+    exportar_relatorio_pedagios_excel
+)
+
 
 
 def carregar_simbolo_consigaz_b64() -> str:
@@ -2121,6 +2127,343 @@ def render_fechamento_lote(tag_logo, tag_logo_sidebar):
     else:
         st.info("👆 Arraste e solte arquivos de e-mail (.msg / .eml) ou planilhas (.xlsx) no campo acima para carregar as linhas.")
 
+
+def render_auditoria_pedagios(tag_logo, tag_logo_sidebar):
+    st.markdown(
+        f'<div style="display:flex;align-items:center;gap:14px;margin-bottom:6px;padding-bottom:4px;">{tag_logo}<div><div class="main-header">Consigaz — Auditoria Automática de Pedágios</div><div class="sub-header">Cruza os valores de pedágio cobrados no Fechamento com o Relatório de Pedágios (.pdf), detecta datas trocadas ou somas acumuladas, verifica a rota no Maps e exibe as fotos dos comprovantes</div></div></div>',
+        unsafe_allow_html=True
+    )
+
+    st.sidebar.markdown(
+        f'<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">{tag_logo_sidebar}<span style="font-size:18px;font-weight:800;color:#F8FAFC;letter-spacing:0.3px;">Parâmetros do Pedágio</span></div>',
+        unsafe_allow_html=True
+    )
+
+    arquivos_ped = st.file_uploader(
+        "Arraste o E-mail completo (.msg / .eml) OU a Planilha de Fechamento (.xlsx) + Relatório de Pedágios (.pdf) + Relatório Totvs opcional (.xlsx):",
+        type=["msg", "eml", "xlsx", "xlsm", "pdf"],
+        accept_multiple_files=True,
+        key="upload_arquivos_pedagio",
+        help="Você pode soltar diretamente o arquivo .msg/.eml do Outlook (o sistema extrai sozinho a planilha e o PDF lá de dentro) ou soltar os arquivos .xlsx e .pdf separados."
+    )
+
+    desemp = None
+    if arquivos_ped:
+        try:
+            desemp = desempacotar_arquivos_pedagio(arquivos_ped)
+        except Exception as e:
+            st.error(f"Erro ao ler os arquivos enviados: {e}")
+
+    lista_labels = list(OPCOES_BASES_FORMATADAS.keys())
+    sigla_sugerida = desemp["base_sugerida"] if desemp and desemp.get("base_sugerida") else "BRU"
+    indice_padrao = 0
+    for idx, lbl in enumerate(lista_labels):
+        if f"- {sigla_sugerida} " in lbl:
+            indice_padrao = idx
+            break
+
+    label_base_sel = st.sidebar.selectbox(
+        "Base Operacional (Tabela Oficial Consigaz):",
+        options=lista_labels,
+        index=indice_padrao,
+        key="select_base_pedagio"
+    )
+    dados_base = OPCOES_BASES_FORMATADAS[label_base_sel]
+    base_selecionada = dados_base["sigla"]
+    endereco_partida = st.sidebar.text_area(
+        "Endereço de Partida e Retorno (Base Consigaz):",
+        value=dados_base["endereco"],
+        height=80,
+        key="end_base_pedagio"
+    )
+
+    st.sidebar.markdown("---")
+    st.sidebar.markdown(
+        '<div style="text-align: center; padding: 14px 10px; background-color: #1E293B; border-radius: 8px; border: 1.5px solid #334155; margin-top: 18px; box-shadow: 0 4px 12px rgba(0,0,0,0.3);"><span style="font-size: 16px; font-weight: 800; color: #38BDF8; letter-spacing: 0.5px;">Desenvolvido por Chiku</span></div>',
+        unsafe_allow_html=True
+    )
+
+    if desemp:
+        chips_arq = []
+        if desemp.get("nome_fechamento"):
+            chips_arq.append(f'✅ <b>Fechamento:</b> {desemp["nome_fechamento"]}')
+        else:
+            chips_arq.append('⚠️ <b>Fechamento (.xlsx):</b> Não identificado')
+
+        if desemp.get("nome_pdf"):
+            chips_arq.append(f'✅ <b>Relatório PDF:</b> {desemp["nome_pdf"]}')
+        else:
+            chips_arq.append('ℹ️ <b>Relatório PDF:</b> Não anexado (analisando apenas a planilha)')
+
+        if desemp.get("nome_totvs"):
+            chips_arq.append(f'✅ <b>Totvs:</b> {desemp["nome_totvs"]}')
+
+        chips_arq.append(f'📍 <b>Base:</b> {base_selecionada}')
+        st.markdown(
+            f'<div style="background-color:#1E293B;border:1px solid #334155;border-radius:8px;padding:12px 16px;margin-bottom:16px;font-size:13.5px;color:#F8FAFC;display:flex;flex-wrap:wrap;gap:18px;">{" &nbsp;|&nbsp; ".join(chips_arq)}</div>',
+            unsafe_allow_html=True
+        )
+
+        if desemp.get("wb_fechamento") is not None:
+            with st.spinner("Cruzando pedágios da planilha com o Relatório PDF e calculando rotas..."):
+                res_ped = processar_auditoria_pedagios(
+                    wb_fechamento=desemp["wb_fechamento"],
+                    pdf_bytes=desemp.get("pdf_bytes"),
+                    wb_totvs=desemp.get("wb_totvs"),
+                    base_codigo=base_selecionada,
+                    base_endereco_custom=endereco_partida
+                )
+            st.session_state["resultado_pedagio"] = res_ped
+            st.session_state["nome_fechamento_pedagio"] = desemp.get("nome_fechamento", "Consigaz")
+        else:
+            st.warning("Nenhuma planilha de fechamento (.xlsx) foi encontrada nos arquivos enviados.")
+
+    if "resultado_pedagio" in st.session_state and arquivos_ped:
+        rp = st.session_state["resultado_pedagio"]
+        conc_dias = rp.get("conciliacao_dias", [])
+        imgs_pdf = rp.get("imagens_comprovantes", [])
+
+        # 4 Métricas Principais no Topo
+        m1, m2, m3, m4 = st.columns(4)
+        with m1:
+            st.metric(
+                "Total Pedágio na Planilha",
+                formatar_moeda_br(rp["total_planilha"]),
+                f"{rp['qtd_oss_com_pedagio']} OSs cobrando",
+                help="Soma de todos os pedágios cobrados nas abas da planilha de fechamento"
+            )
+        with m2:
+            if rp["tem_pdf"]:
+                dif_tot = rp["diferenca_total"]
+                delta_str = "✅ Total Bateu Exato" if abs(dif_tot) <= 0.05 else f"Diferença: {formatar_moeda_br(dif_tot)}"
+                st.metric(
+                    "Total no Relatório PDF",
+                    formatar_moeda_br(rp["total_pdf"]),
+                    delta_str,
+                    delta_color="normal" if abs(dif_tot) <= 0.05 else "inverse",
+                    help=f"{rp['qtd_comprovantes_pdf']} comprovantes lançados e {rp['qtd_fotos_pdf']} páginas de fotos no PDF"
+                )
+            else:
+                st.metric("Total no Relatório PDF", "Sem PDF", "Anexe o PDF", delta_color="off")
+        with m3:
+            st.metric(
+                "Dias Aprovados (Bateu Exato)",
+                f"{rp['qtd_dias_aprovados']} dias",
+                "✅ Data, Valor e KM OK" if rp["qtd_dias_aprovados"] > 0 else None
+            )
+        with m4:
+            qtd_al = rp["qtd_dias_com_alerta"]
+            st.metric(
+                "Lançamentos c/ Alerta",
+                f"{qtd_al} casos",
+                f"🚨 Conferir {qtd_al} alerta(s)" if qtd_al > 0 else "Nenhuma anomalia",
+                delta_color="inverse" if qtd_al > 0 else "normal"
+            )
+
+        st.markdown("---")
+
+        tab_conc, tab_fotos, tab_tabela = st.tabs([
+            "🛣️ 1. Conciliação Diária (Planilha vs. PDF vs. Rota)",
+            f"📸 2. Fotos dos Comprovantes e Recibos ({len(imgs_pdf)} páginas)",
+            "📋 3. Tabela Geral & Exportar Excel"
+        ])
+
+        with tab_conc:
+            if not conc_dias:
+                st.info("Nenhuma cobrança de pedágio encontrada nesta planilha.")
+            else:
+                dias_alerta = [d for d in conc_dias if d["Status Código"] in ["ALERTA", "ATENCAO"]]
+                dias_ok = [d for d in conc_dias if d["Status Código"] == "APROVADO"]
+
+                filtro_ped = st.radio(
+                    "Filtrar Lançamentos de Pedágio:",
+                    options=[
+                        f"Todos os Registros ({len(conc_dias)})",
+                        f"🚨 Apenas com Alerta / Divergência ({len(dias_alerta)})",
+                        f"✅ Apenas Aprovados ({len(dias_ok)})"
+                    ],
+                    horizontal=True,
+                    key="filtro_cards_pedagio"
+                )
+
+                if "Alerta" in filtro_ped:
+                    lista_exibir = dias_alerta
+                elif "Aprovados" in filtro_ped:
+                    lista_exibir = dias_ok
+                else:
+                    lista_exibir = conc_dias
+
+                for d in lista_exibir:
+                    st_cod = d["Status Código"]
+                    if st_cod == "APROVADO":
+                        badge_html = f'<span class="badge-normal">{d["Badge Status"]}</span>'
+                        cor_box_diag = "#14532D"
+                        cor_borda_diag = "#22C55E"
+                        cor_txt_diag = "#DCFCE7"
+                    elif st_cod == "ALERTA":
+                        badge_html = f'<span class="badge-alto">{d["Badge Status"]}</span>'
+                        cor_box_diag = "#7F1D1D"
+                        cor_borda_diag = "#EF4444"
+                        cor_txt_diag = "#FEE2E2"
+                    elif st_cod == "ATENCAO":
+                        badge_html = f'<span class="badge-cobrando" style="font-size:12.5px;padding:4px 10px;border-radius:12px;">{d["Badge Status"]}</span>'
+                        cor_box_diag = "#451A03"
+                        cor_borda_diag = "#F59E0B"
+                        cor_txt_diag = "#FEF3C7"
+                    else:
+                        badge_html = f'<span class="badge-mapa">{d["Badge Status"]}</span>'
+                        cor_box_diag = "#0C4A6E"
+                        cor_borda_diag = "#38BDF8"
+                        cor_txt_diag = "#E0F2FE"
+
+                    val_pl_str = formatar_moeda_br(d["Pedágio na Planilha"])
+                    val_pdf_str = formatar_moeda_br(d["Pedágio no PDF"]) if rp["tem_pdf"] else "Sem PDF"
+                    sub_pdf = f"{d['Qtd Recibos PDF']} comprovante(s) lançado(s) no PDF" if rp["tem_pdf"] else "PDF não anexado"
+
+                    btn_rota_html = (
+                        f'<a href="{d["Link Maps"]}" target="_blank" class="btn-maps" style="margin-top:6px;">🌐 Abrir Rota no Google Maps e Conferir Pedágios</a>'
+                        if d["Link Maps"] else ""
+                    )
+
+                    linhas_tb_oss = []
+                    for idx_o, o_it in enumerate(d["Todas as OSs do Dia"], start=1):
+                        tem_p = o_it["pedagio"] > 0
+                        r_cls = ' class="row-highlight"' if tem_p else ''
+                        bd_ped = f'<span class="badge-cobrando">💰 {formatar_moeda_br(o_it["pedagio"])}</span>' if tem_p else '<span class="badge-sem-km">R$ 0,00</span>'
+                        km_txt = f'{o_it["km_cobrado"]:,.1f} km' if o_it["km_cobrado"] > 0 else '<span style="color:#F87171;font-weight:700;">0,0 km</span>'
+                        linhas_tb_oss.append(
+                            f'<tr{r_cls}>'
+                            f'<td style="text-align:center;font-weight:700;">{idx_o}</td>'
+                            f'<td style="text-align:center;font-weight:700;">{o_it["aba"]}</td>'
+                            f'<td style="text-align:center;font-weight:800;color:#38BDF8;">OS {o_it["os"]}</td>'
+                            f'<td style="text-align:center;font-weight:700;">{o_it["cidade"]}</td>'
+                            f'<td style="text-align:left;">{o_it["endereco"]}</td>'
+                            f'<td style="text-align:center;">{km_txt}</td>'
+                            f'<td style="text-align:center;">{bd_ped}</td>'
+                            f'<td style="text-align:left;color:#CBD5E1;">{o_it["servico"]}</td>'
+                            f'</tr>'
+                        )
+
+                    tabela_oss_html = ""
+                    if linhas_tb_oss:
+                        tabela_oss_html = (
+                            f'<div style="margin-top:12px;">'
+                            f'<div style="font-weight:700;color:#38BDF8;font-size:13.5px;margin-bottom:6px;">📋 OSs Atendidas na Data ({len(linhas_tb_oss)} OSs):</div>'
+                            f'<table class="table-km" style="font-size:12.5px;margin-bottom:4px;">'
+                            f'<thead><tr>'
+                            f'<th style="width:40px;">#</th>'
+                            f'<th style="width:150px;">Aba Planilha</th>'
+                            f'<th style="width:100px;">OS</th>'
+                            f'<th style="width:140px;">Cidade</th>'
+                            f'<th>Endereço / Destino</th>'
+                            f'<th style="width:100px;">KM na OS</th>'
+                            f'<th style="width:130px;">Pedágio Cobrado</th>'
+                            f'<th>Serviço Prestado</th>'
+                            f'</tr></thead><tbody>{"".join(linhas_tb_oss)}</tbody></table></div>'
+                        )
+
+                    card_ped_html = (
+                        f'<div class="card-dia">'
+                        f'<div class="card-dia-header">'
+                        f'<div><span class="card-dia-data">📅 {d["Data"]}</span>'
+                        f'<span style="margin-left:12px;font-size:13.5px;color:#94A3B8;font-weight:600;">({d["OSs com Pedágio"]})</span></div>'
+                        f'<div>{badge_html}</div>'
+                        f'</div>'
+                        f'<div style="background-color:{cor_box_diag};border:1px solid {cor_borda_diag};color:{cor_txt_diag};padding:11px 15px;border-radius:8px;margin-bottom:14px;font-size:13.5px;font-weight:600;">'
+                        f'🔎 <b>Diagnóstico Automático:</b> {d["Explicação"]}'
+                        f'</div>'
+                        f'<div class="card-dia-metricas">'
+                        f'<div class="metrica-box">'
+                        f'<span class="metrica-label">💰 PEDÁGIO COBRADO NA PLANILHA</span>'
+                        f'<span class="metrica-val" style="color:#F8FAFC;">{val_pl_str}</span>'
+                        f'<span class="metrica-sub">OSs: {d["OSs com Pedágio"]}</span>'
+                        f'</div>'
+                        f'<div class="metrica-box">'
+                        f'<span class="metrica-label">📄 VALOR NO RELATÓRIO PDF</span>'
+                        f'<span class="metrica-val" style="color:#38BDF8;">{val_pdf_str}</span>'
+                        f'<span class="metrica-sub">{sub_pdf}</span>'
+                        f'</div>'
+                        f'<div class="metrica-box">'
+                        f'<span class="metrica-label">🛣️ ROTA E DESLOCAMENTO DO DIA</span>'
+                        f'<span class="metrica-val" style="color:#E2E8F0;font-size:15px;">{d["Sequência da Rota"]}</span>'
+                        f'<span class="metrica-sub">KM Cobrado: <b>{d["KM Cobrado no Dia"]:,.1f} km</b> | Maior Rota Maps: <b>{d["KM Calculado da Rota"]:,.1f} km</b></span>'
+                        f'<div>{btn_rota_html}</div>'
+                        f'</div>'
+                        f'</div>'
+                        f'{tabela_oss_html}'
+                        f'</div>'
+                    )
+                    st.markdown(card_ped_html, unsafe_allow_html=True)
+
+        with tab_fotos:
+            if not imgs_pdf:
+                st.info("Nenhuma foto de comprovante foi encontrada. Envie o arquivo **Relatório de Pedágios.pdf** (ou o e-mail `.msg`/`.eml` que o contém) para visualizar os recibos aqui.")
+            else:
+                st.markdown("#### 📸 Comprovantes e Recibos Anexados no PDF")
+                st.caption(
+                    "Confira abaixo as fotos extraídas diretamente do **Relatório de Pedágios.pdf**. "
+                    "Atenção especial para **recibos de estacionamento** (ex: *Estacionamento Fique Aqui*, *Estacionamentos Trevo*) cobrados indevidamente como pedágio!"
+                )
+
+                modo_vis = st.radio(
+                    "Modo de Visualização das Fotos:",
+                    options=["🔍 Tamanho Grande (Ideal para ler letras miúdas dos recibos)", "🖼️ Grade Lado a Lado (2 colunas)"],
+                    horizontal=True,
+                    key="modo_vis_fotos_ped"
+                )
+
+                if "Grade" in modo_vis:
+                    cols_f = st.columns(2)
+                    for idx_f, item_img in enumerate(imgs_pdf):
+                        with cols_f[idx_f % 2]:
+                            st.markdown(f"**📄 {item_img['titulo']} (Página {idx_f + 2} do PDF)**")
+                            st.image(item_img["bytes"], use_container_width=True)
+                else:
+                    opcoes_comp = ["Exibir Todos em Sequência"] + [f"{it['titulo']} (Página {i+2})" for i, it in enumerate(imgs_pdf)]
+                    sel_comp = st.selectbox("Ir para comprovante específico:", options=opcoes_comp, key="sel_comp_ped")
+                    for idx_f, item_img in enumerate(imgs_pdf):
+                        label_atual = f"{item_img['titulo']} (Página {idx_f+2})"
+                        if sel_comp != "Exibir Todos em Sequência" and sel_comp != label_atual:
+                            continue
+                        st.markdown(
+                            f'<div style="background:#1E293B;border:1px solid #334155;border-radius:8px;padding:10px 14px;margin-top:12px;margin-bottom:6px;font-weight:800;color:#38BDF8;">📄 {label_atual}</div>',
+                            unsafe_allow_html=True
+                        )
+                        st.image(item_img["bytes"], use_container_width=True)
+
+        with tab_tabela:
+            st.markdown("#### 📋 Resumo Geral da Conciliação de Pedágios")
+            df_ped = pd.DataFrame([
+                {
+                    "Data": d["Data"],
+                    "OSs Cobrando Pedágio": d["OSs com Pedágio"],
+                    "Cidades Visitadas": d["Cidades do Dia"],
+                    "KM Cobrado": f"{d['KM Cobrado no Dia']:,.1f} km",
+                    "Maior KM Maps": f"{d['KM Calculado da Rota']:,.1f} km",
+                    "Pedágio Planilha (R$)": formatar_moeda_br(d["Pedágio na Planilha"]),
+                    "Pedágio PDF (R$)": formatar_moeda_br(d["Pedágio no PDF"]),
+                    "Recibos no PDF": d["Qtd Recibos PDF"],
+                    "Status": d["Badge Status"],
+                    "Diagnóstico": d["Explicação"]
+                }
+                for d in conc_dias
+            ])
+            st.dataframe(df_ped, use_container_width=True, hide_index=True)
+
+            buf_ped = io.BytesIO()
+            exportar_relatorio_pedagios_excel(rp, buf_ped)
+            buf_ped.seek(0)
+            nome_xlsx_ped = f"Auditoria_Pedagios_{st.session_state.get('nome_fechamento_pedagio', 'Consigaz')}.xlsx"
+            st.download_button(
+                label="📥 Baixar Relatório de Auditoria de Pedágios (.xlsx)",
+                data=buf_ped,
+                file_name=nome_xlsx_ped,
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+    elif not arquivos_ped:
+        st.info("👆 Arraste o **e-mail `.msg` / `.eml`** (ou a **Planilha de Fechamento `.xlsx`** + **`Relatório de Pedágios.pdf`**) no campo acima para iniciar a auditoria automática de pedágios.")
+
+
 st.sidebar.markdown(
     f'<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">{tag_logo_sidebar}<span style="font-size:16px;font-weight:800;color:#38BDF8;letter-spacing:0.5px;">CONSIGAZ TOOLS</span></div>',
     unsafe_allow_html=True
@@ -2132,7 +2475,7 @@ modulo_ativo = st.sidebar.radio(
 
     "Selecione a Ferramenta:",
 
-    options=["🚗 Auditoria de KM por Dia", "✉️ Fechamento por E-mails / Lote"],
+    options=["🚗 Auditoria de KM por Dia", "🛣️ Auditoria de Pedágios", "✉️ Fechamento por E-mails / Lote"],
 
     index=0
 
@@ -2145,6 +2488,10 @@ st.sidebar.markdown("---")
 if modulo_ativo == "🚗 Auditoria de KM por Dia":
 
     render_auditoria_km(tag_logo, tag_logo_sidebar)
+
+elif modulo_ativo == "🛣️ Auditoria de Pedágios":
+
+    render_auditoria_pedagios(tag_logo, tag_logo_sidebar)
 
 else:
 
