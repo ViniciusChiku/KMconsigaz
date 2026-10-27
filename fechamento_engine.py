@@ -3,6 +3,7 @@ import os
 import re
 import json
 import tempfile
+import unicodedata
 from datetime import datetime
 import openpyxl
 import pandas as pd
@@ -15,10 +16,98 @@ except ImportError:
     extract_msg = None
 
 
+# Tabela Oficial de Bases Consigaz (Código -> Abreviação Oficial de 3 letras)
+# 01 - Barueri: BRU
+# 02 - Paulínia: PLN
+# 03 - São Vicente: SVC
+# 04 - São José dos Campos: SJC
+# 05 - Cariacica: CAR
+# 06 - Canoas: CAN
+# 07 - Senador Canedo: SNC
+# 08 - Mauá: MAU
+# 09 - Duque de Caxias: DQX
+# 10 - Araucária: ARA
+# 11 - Ribeirão Preto: RIB
+# 13 - Uberlândia: UBR
+# 14 - Brasília: BRA
+# 15 - Betim: BTM
+# 17 - Porto Belo: PTB
+# 18 - Jandaia do Sul: JDS
+
 BASES = [
-    "PTB", "UBR", "SNC", "MAU", "SVC", "CAR", "SJC", "JDS",
-    "DQX", "CAN", "BRU", "ARA", "PLN", "RIB", "CORP", "BTM", "BRA"
+    "BRU", "PLN", "SVC", "SJC", "CAR", "CAN", "SNC", "MAU",
+    "DQX", "ARA", "RIB", "UBR", "BRA", "BTM", "PTB", "JDS", "CORP"
 ]
+
+SIGLAS_BASES = {
+    "BRU": "BRU",
+    "PLN": "PLN",
+    "SVC": "SVC",
+    "SJC": "SJC",
+    "CAR": "CAR",
+    "CAN": "CAN",
+    "SNC": "SNC",
+    "MAU": "MAU",
+    "DQX": "DQX",
+    "ARA": "ARA",
+    "RIB": "RIB",
+    "RBP": "RIB",
+    "UBR": "UBR",
+    "BRA": "BRA",
+    "BSB": "BRA",
+    "BTM": "BTM",
+    "PTB": "PTB",
+    "JDS": "JDS",
+    "CORP": "CORP",
+}
+
+NOMES_CIDADES_BASES = [
+    ("SAO JOSE DOS CAMPOS", "SJC"),
+    ("S J DOS CAMPOS", "SJC"),
+    ("SJCAMPOS", "SJC"),
+    ("DUQUE DE CAXIAS", "DQX"),
+    ("SENADOR CANEDO", "SNC"),
+    ("RIBEIRAO PRETO", "RIB"),
+    ("JANDAIA DO SUL", "JDS"),
+    ("SAO VICENTE", "SVC"),
+    ("PORTO BELO", "PTB"),
+    ("UBERLANDIA", "UBR"),
+    ("ARAUCARIA", "ARA"),
+    ("ARAUCARA", "ARA"),
+    ("CARIACICA", "CAR"),
+    ("PAULINIA", "PLN"),
+    ("PAULINA", "PLN"),
+    ("BRASILIA", "BRA"),
+    ("BARUERI", "BRU"),
+    ("JANDAIA", "JDS"),
+    ("CANEDO", "SNC"),
+    ("CAXIAS", "DQX"),
+    ("CANOAS", "CAN"),
+    ("BETIM", "BTM"),
+    ("MAUA", "MAU"),
+    ("CORPORATIVO", "CORP"),
+]
+
+NUMEROS_BASES = {
+    1: "BRU",
+    2: "PLN",
+    3: "SVC",
+    4: "SJC",
+    5: "CAR",
+    6: "CAN",
+    7: "SNC",
+    8: "MAU",
+    9: "DQX",
+    10: "ARA",
+    11: "RIB",
+    13: "UBR",
+    14: "BRA",
+    15: "BTM",
+    17: "PTB",
+    18: "JDS",
+}
+
+MAPA_BASES = {**SIGLAS_BASES, **dict(NOMES_CIDADES_BASES)}
 
 MESES = [
     "JAN", "FEV", "MAR", "ABR", "MAI", "JUN",
@@ -40,53 +129,77 @@ MAPA_MESES = {
     "DEZ": "DEZ", "DEZEMBRO": "DEZ"
 }
 
-MAPA_BASES = {
-    "PTB": "PTB", "PORTO BELO": "PTB",
-    "UBR": "UBR", "UBERLANDIA": "UBR", "UBERLÂNDIA": "UBR",
-    "SNC": "SNC", "SENADOR CANEDO": "SNC",
-    "MAU": "MAU", "MAUA": "MAU", "MAUÁ": "MAU",
-    "SVC": "SVC", "SAO VICENTE": "SVC", "SÃO VICENTE": "SVC",
-    "CAR": "CAR", "CARIACICA": "CAR",
-    "SJC": "SJC",
-    "JDS": "JDS",
-    "DQX": "DQX", "DUQUE DE CAXIAS": "DQX",
-    "CAN": "CAN", "CANOAS": "CAN",
-    "BRU": "BRU",
-    "ARA": "ARA", "ARAUCARIA": "ARA", "ARAUCÁRIA": "ARA",
-    "PLN": "PLN", "PAULINIA": "PLN", "PAULÍNIA": "PLN",
-    "RIB": "RIB", "RBP": "RIB", "RIBEIRAO PRETO": "RIB", "RIBEIRÃO PRETO": "RIB",
-    "CORP": "CORP", "CORPORATIVO": "CORP",
-    "BTM": "BTM", "BETIM": "BTM",
-    "BRA": "BRA", "BARUERI": "BRU", "BRASILIA": "BRA", "BRASÍLIA": "BRA", "BSB": "BRA"
-}
+
+def _normalizar_sem_acento(texto: str) -> str:
+    if not texto:
+        return ""
+    return "".join(
+        c for c in unicodedata.normalize("NFD", str(texto).upper())
+        if unicodedata.category(c) != "Mn"
+    )
 
 
 def limpar_assunto(texto: str) -> str:
     """Remove prefixos como ENC:, RE:, RES:, FWD: e espaços extras."""
     if not texto:
         return ""
-    padrao = r'^(?:(?:ENC|RE|RES|FWD|FW|AN[AÁ]LISE)\s*:\s*)+'
+    padrao = r'^(?:(?:ENC|RE|RES|FWD|FW|AN[AÁ]LISE)\s*[:_]\s*)+'
     limpo = re.sub(padrao, '', str(texto).strip(), flags=re.IGNORECASE).strip()
     return limpo
 
 
 def extrair_partes(texto: str):
-    """Divide o texto em palavras isoladas, ignorando separadores."""
+    """Divide o texto em palavras isoladas na ordem em que aparecem."""
     if not texto:
-        return set()
-    return set(re.split(r'[-_/\\\s\[\]().,;:!ºª]+', str(texto).upper()))
+        return []
+    return [p for p in re.split(r'[-_/\\\s\[\]().,;:!ºª]+', str(texto).upper()) if p]
 
 
-def encontrar_base(texto: str):
+def encontrar_sigla_exata(texto: str):
+    """Procura especificamente pela abreviação de 3 letras (ex: BRU, PLN, SVC, SJC...) como palavra isolada."""
     if not texto:
         return None
-    partes = extrair_partes(texto)
-    for p in partes:
-        if p in MAPA_BASES:
-            return MAPA_BASES[p]
-    for k, v in MAPA_BASES.items():
-        if k in str(texto).upper():
-            return v
+    txt_norm = _normalizar_sem_acento(texto)
+    for palavra in re.findall(r'[A-Z]+', txt_norm):
+        if palavra in SIGLAS_BASES:
+            return SIGLAS_BASES[palavra]
+    return None
+
+
+def encontrar_base(texto: str, aceitar_numero_puro: bool = False):
+    """
+    Identifica a Base sempre retornando a abreviação oficial de 3 letras (ex: BRU, PLN, SVC, SJC...).
+    1. Procura primeiro pela abreviação exata (token isolado, sem confundir com pedaços de palavras como OUT[UBR]O).
+    2. Procura pelo nome da cidade (ex: Barueri -> BRU, São José dos Campos -> SJC).
+    3. Procura por 'Base XX' ou código numérico da base (quando na célula da planilha).
+    """
+    if not texto:
+        return None
+
+    sigla = encontrar_sigla_exata(texto)
+    if sigla:
+        return sigla
+
+    txt_norm = _normalizar_sem_acento(texto)
+    palavras = re.findall(r'[A-Z]+', txt_norm)
+    frase = " " + " ".join(palavras) + " "
+    for nome_cid, s_base in NOMES_CIDADES_BASES:
+        if f" {nome_cid} " in frase:
+            return s_base
+
+    m_base = re.search(r'\bBASE\s*0*(\d{1,2})\b', txt_norm)
+    if m_base:
+        num = int(m_base.group(1))
+        if num in NUMEROS_BASES:
+            return NUMEROS_BASES[num]
+
+    if aceitar_numero_puro:
+        m_num = re.match(r'^\s*0*(\d{1,2})(?:\b|\D|$)', txt_norm)
+        if m_num:
+            num = int(m_num.group(1))
+            if num in NUMEROS_BASES:
+                return NUMEROS_BASES[num]
+
     return None
 
 
@@ -127,7 +240,7 @@ def formatar_moeda_br(v):
         return str(v)
 
 
-def extrair_dados_de_planilha(conteudo_ou_stream, nome_arquivo=""):
+def extrair_dados_de_planilha(conteudo_ou_stream, nome_arquivo="", texto_email=""):
     """
     Abre o workbook Excel (suportando senha com carregar_planilha_segura)
     e lê as células da aba CONSOLIDADO:
@@ -136,6 +249,8 @@ def extrair_dados_de_planilha(conteudo_ou_stream, nome_arquivo=""):
       - AQ5: Código / CNPJ do Fornecedor
       - BJ16: Valor Total
       - BD5: Período
+    Sempre retorna a Base como abreviação de 3 letras (ex: BRU, PLN, SVC, SJC...),
+    olhando por abreviação no e-mail ou no Excel (nome do arquivo e aba CONSOLIDADO).
     """
     wb = carregar_planilha_segura(conteudo_ou_stream, senha="FECHAMENTO")
     if not wb:
@@ -147,9 +262,30 @@ def extrair_dados_de_planilha(conteudo_ou_stream, nome_arquivo=""):
 
     ws = wb["CONSOLIDADO"]
 
-    # 1. Base (célula BT5 ou deduzida pelo nome do arquivo)
-    base_celula = str(ws["BT5"].value or "").strip().upper()
-    base_detectada = MAPA_BASES.get(base_celula) or encontrar_base(base_celula) or encontrar_base(nome_arquivo)
+    # 1. Base: prioriza abreviação exata no e-mail, no nome do Excel ou na célula BT5;
+    #    caso contrário, converte nome da cidade / código da base (01..18) para a abreviação de 3 letras.
+    base_celula = str(ws["BT5"].value or "").strip()
+    base_detectada = (
+        encontrar_sigla_exata(texto_email)
+        or encontrar_sigla_exata(nome_arquivo)
+        or encontrar_sigla_exata(base_celula)
+        or encontrar_base(texto_email, aceitar_numero_puro=False)
+        or encontrar_base(nome_arquivo, aceitar_numero_puro=False)
+        or encontrar_base(base_celula, aceitar_numero_puro=True)
+    )
+
+    # Se BT5 estiver mesclada ou deslocada na aba CONSOLIDADO, verifica células vizinhas do cabeçalho (linhas 3 a 7, colunas BP a BZ)
+    if not base_detectada:
+        for r_idx in range(3, 8):
+            for c_idx in range(68, 79):
+                val_viz = ws.cell(r_idx, c_idx).value
+                if val_viz is not None:
+                    b_viz = encontrar_base(str(val_viz), aceitar_numero_puro=False)
+                    if b_viz:
+                        base_detectada = b_viz
+                        break
+            if base_detectada:
+                break
 
     # 2. Código do Fornecedor (AQ5)
     cod_celula = ws["AQ5"].value
@@ -165,12 +301,12 @@ def extrair_dados_de_planilha(conteudo_ou_stream, nome_arquivo=""):
 
     # 5. Período (BD5)
     periodo_celula = str(ws["BD5"].value or "").strip()
-    mes_detectado = encontrar_mes(periodo_celula) or encontrar_mes(nome_arquivo)
+    mes_detectado = encontrar_mes(periodo_celula) or encontrar_mes(nome_arquivo) or encontrar_mes(texto_email)
 
     wb.close()
 
     return {
-        "base": base_detectada or (base_celula if base_celula else "N/D"),
+        "base": base_detectada or "N/D",
         "codigo_fornecedor": codigo_fornecedor,
         "fornecedor": fornecedor or codigo_fornecedor or "N/D",
         "valor": valor_num,
@@ -179,9 +315,27 @@ def extrair_dados_de_planilha(conteudo_ou_stream, nome_arquivo=""):
     }
 
 
+def _filtrar_registros_anexos_email(registros_email):
+    """
+    Quando um mesmo e-mail possui mais de um anexo Excel (ex: planilha de fechamento + relatório Totvs sem aba CONSOLIDADO),
+    se pelo menos uma planilha válida (com aba CONSOLIDADO) foi lida com sucesso, ignora os anexos auxiliares sem CONSOLIDADO.
+    """
+    if len(registros_email) <= 1:
+        return registros_email
+    tem_valido = any(not str(r.get("status", "")).startswith("ERRO") for r in registros_email)
+    if tem_valido:
+        filtrados = [
+            r for r in registros_email
+            if "CONSOLIDADO" not in str(r.get("detalhe_erro", ""))
+        ]
+        if filtrados:
+            return filtrados
+    return registros_email
+
+
 def processar_arquivo_uploaded(uploaded_file):
     """
-    Processa um arquivo carregado via Streamlit (podendo ser .xlsx/.xlsm ou .msg).
+    Processa um arquivo carregado via Streamlit (podendo ser .xlsx/.xlsm, .msg ou .eml).
     Suporta tanto o objeto UploadedFile do Streamlit quanto um dicionário com {'nome': ..., 'bytes': ...}.
     Retorna uma lista de dicionários com os registros extraídos.
     """
@@ -217,6 +371,7 @@ def processar_arquivo_uploaded(uploaded_file):
                 assunto_limpo = limpar_assunto(assunto_original)
                 remetente = str(msg.sender or "")
                 data_msg = msg.date
+                texto_email = f"{assunto_original} {nome_orig}"
 
                 data_str = ""
                 if data_msg:
@@ -238,7 +393,7 @@ def processar_arquivo_uploaded(uploaded_file):
                         anexos_excel.append((att_nome, att.data))
 
                 if not anexos_excel:
-                    base_assunto = encontrar_base(assunto_original) or "N/D"
+                    base_assunto = encontrar_base(texto_email) or "N/D"
                     registros.append({
                         "base": base_assunto,
                         "identificacao": assunto_limpo or nome_orig,
@@ -255,16 +410,17 @@ def processar_arquivo_uploaded(uploaded_file):
                     return registros
 
                 # Processa cada anexo Excel encontrado no e-mail
+                registros_email = []
                 for att_nome, att_bytes in anexos_excel:
                     try:
-                        dados = extrair_dados_de_planilha(att_bytes, att_nome)
+                        dados = extrair_dados_de_planilha(att_bytes, att_nome, texto_email=texto_email)
                         base_final = dados["base"]
                         if base_final == "N/D" or not base_final:
-                            base_final = encontrar_base(assunto_original) or "N/D"
+                            base_final = encontrar_base(texto_email) or encontrar_base(att_nome) or "N/D"
 
                         identificacao = assunto_limpo if assunto_limpo else os.path.splitext(att_nome)[0]
 
-                        registros.append({
+                        registros_email.append({
                             "base": base_final,
                             "identificacao": identificacao,
                             "codigo_fornecedor": dados["codigo_fornecedor"],
@@ -278,8 +434,8 @@ def processar_arquivo_uploaded(uploaded_file):
                             "arquivo_chave": nome_orig
                         })
                     except Exception as err_att:
-                        registros.append({
-                            "base": encontrar_base(assunto_original) or encontrar_base(att_nome) or "N/D",
+                        registros_email.append({
+                            "base": encontrar_base(texto_email) or encontrar_base(att_nome) or "N/D",
                             "identificacao": assunto_limpo or att_nome,
                             "codigo_fornecedor": "",
                             "fornecedor": remetente or "N/D",
@@ -291,6 +447,7 @@ def processar_arquivo_uploaded(uploaded_file):
                             "detalhe_erro": str(err_att),
                             "arquivo_chave": nome_orig
                         })
+                registros.extend(_filtrar_registros_anexos_email(registros_email))
         finally:
             if os.path.exists(tmp_path):
                 try:
@@ -309,6 +466,7 @@ def processar_arquivo_uploaded(uploaded_file):
             assunto_limpo = limpar_assunto(assunto_original)
             remetente = str(msg.get("from") or "")
             data_msg_header = msg.get("date")
+            texto_email = f"{assunto_original} {nome_orig}"
 
             data_str = ""
             if data_msg_header:
@@ -328,7 +486,7 @@ def processar_arquivo_uploaded(uploaded_file):
                     anexos_excel.append((att_nome, part.get_content()))
 
             if not anexos_excel:
-                base_assunto = encontrar_base(assunto_original) or "N/D"
+                base_assunto = encontrar_base(texto_email) or "N/D"
                 registros.append({
                     "base": base_assunto,
                     "identificacao": assunto_limpo or nome_orig,
@@ -344,16 +502,17 @@ def processar_arquivo_uploaded(uploaded_file):
                 })
                 return registros
 
+            registros_email = []
             for att_nome, att_bytes in anexos_excel:
                 try:
-                    dados = extrair_dados_de_planilha(att_bytes, att_nome)
+                    dados = extrair_dados_de_planilha(att_bytes, att_nome, texto_email=texto_email)
                     base_final = dados["base"]
                     if base_final == "N/D" or not base_final:
-                        base_final = encontrar_base(assunto_original) or "N/D"
+                        base_final = encontrar_base(texto_email) or encontrar_base(att_nome) or "N/D"
 
                     identificacao = assunto_limpo if assunto_limpo else os.path.splitext(att_nome)[0]
 
-                    registros.append({
+                    registros_email.append({
                         "base": base_final,
                         "identificacao": identificacao,
                         "codigo_fornecedor": dados["codigo_fornecedor"],
@@ -367,8 +526,8 @@ def processar_arquivo_uploaded(uploaded_file):
                         "arquivo_chave": nome_orig
                     })
                 except Exception as err_att:
-                    registros.append({
-                        "base": encontrar_base(assunto_original) or encontrar_base(att_nome) or "N/D",
+                    registros_email.append({
+                        "base": encontrar_base(texto_email) or encontrar_base(att_nome) or "N/D",
                         "identificacao": assunto_limpo or att_nome,
                         "codigo_fornecedor": "",
                         "fornecedor": remetente or "N/D",
@@ -380,9 +539,10 @@ def processar_arquivo_uploaded(uploaded_file):
                         "detalhe_erro": str(err_att),
                         "arquivo_chave": nome_orig
                     })
+            registros.extend(_filtrar_registros_anexos_email(registros_email))
         except Exception as e:
             registros.append({
-                "base": "N/D",
+                "base": encontrar_base(nome_orig) or "N/D",
                 "identificacao": nome_orig,
                 "codigo_fornecedor": "",
                 "fornecedor": "ERRO",

@@ -21,6 +21,8 @@ from datetime import datetime
 from fechamento_engine import (
     processar_lote,
     processar_arquivo_uploaded,
+    encontrar_base,
+    limpar_assunto,
     normalizar_valor,
     gerar_tsv_colar_excel,
     gerar_excel_fechamento,
@@ -2017,8 +2019,8 @@ def render_fechamento_lote(tag_logo, tag_logo_sidebar):
                         itens = processar_arquivo_uploaded(arq)
                     except Exception as e:
                         itens = [{
-                            "base": "N/D",
-                            "identificacao": arq.name,
+                            "base": encontrar_base(arq.name) or "N/D",
+                            "identificacao": limpar_assunto(os.path.splitext(arq.name)[0]),
                             "codigo_fornecedor": "",
                             "fornecedor": "ERRO",
                             "valor": 0.0,

@@ -24,19 +24,19 @@ try:
 except ImportError:
     msoffcrypto = None
 
-# Tabela Oficial de Endereços por Base - Consigaz (Tabela 2)
+# Tabela Oficial de Endereços por Base - Consigaz
 ENDERECOS_BASES_DETALHADOS = {
-    8: {"sigla": "MAU", "uf": "SP", "cidade_ibge": "MAUA", "cidade": "Mauá/SP", "endereco": "RUA VITORIA PERDAO PETIGROSSO, 115 - MAUA/SP"},
-    2: {"sigla": "PLN", "uf": "SP", "cidade_ibge": "PAULINIA", "cidade": "Paulínia/SP", "endereco": "RUA EITOR VALENTINO DE SOUZA, 337 - PAULINA/SP"},
     1: {"sigla": "BRU", "uf": "SP", "cidade_ibge": "BARUERI", "cidade": "Barueri/SP", "endereco": "RUA JOSE PEREIRA SOBRINHO, 485 - BARUERI/SP"},
-    6: {"sigla": "CAN", "uf": "RS", "cidade_ibge": "CANOAS", "cidade": "Canoas/RS", "endereco": "RUA ANTONIO FREDERICO OZANAN, 1901 - CANOAS/RS"},
-    9: {"sigla": "DQX", "uf": "RJ", "cidade_ibge": "DUQUE DE CAXIAS", "cidade": "Duque de Caxias/RJ", "endereco": "RUA FREI CANECA, 407 - DUQUE DE CAXIAS/RJ"},
-    11: {"sigla": "RIB", "uf": "SP", "cidade_ibge": "RIBEIRAO PRETO", "cidade": "Ribeirão Preto/SP", "endereco": "ROD ALEXANDRE BALBO, SN - RIBEIRÃO PRETO/SP"},
+    2: {"sigla": "PLN", "uf": "SP", "cidade_ibge": "PAULINIA", "cidade": "Paulínia/SP", "endereco": "RUA EITOR VALENTINO DE SOUZA, 337 - PAULINA/SP"},
+    3: {"sigla": "SVC", "uf": "SP", "cidade_ibge": "SAO VICENTE", "cidade": "São Vicente/SP", "endereco": "AV. MANOEL DE ABREU, 790 QD 108 – SÃO VICENTE/SP"},
+    4: {"sigla": "SJC", "uf": "SP", "cidade_ibge": "SAO JOSE DOS CAMPOS", "cidade": "São José dos Campos/SP", "endereco": "SÃO JOSÉ DOS CAMPOS/SP"},
     5: {"sigla": "CAR", "uf": "ES", "cidade_ibge": "CARIACICA", "cidade": "Cariacica/ES", "endereco": "ROD GOVERNADOR MARIO COVAS 1941, 7161 - CARIACICA/ES"},
-    4: {"sigla": "SVC", "uf": "SP", "cidade_ibge": "SAO VICENTE", "cidade": "São Vicente/SP", "endereco": "RUA MANOEL DE ABREU, 790 - SÃO VICENTE/SP"},
-    3: {"sigla": "SVC", "uf": "SP", "cidade_ibge": "SAO VICENTE", "cidade": "São Vicente/SP (QD 108)", "endereco": "AV. MANOEL DE EBREU, 790 QD 108 – SÃO VICENTE/SP"},
+    6: {"sigla": "CAN", "uf": "RS", "cidade_ibge": "CANOAS", "cidade": "Canoas/RS", "endereco": "RUA ANTONIO FREDERICO OZANAN, 1901 - CANOAS/RS"},
     7: {"sigla": "SNC", "uf": "GO", "cidade_ibge": "SENADOR CANEDO", "cidade": "Senador Canedo/GO", "endereco": "AV PROGRESSO, SN - SENADOR CANEDO/GO"},
+    8: {"sigla": "MAU", "uf": "SP", "cidade_ibge": "MAUA", "cidade": "Mauá/SP", "endereco": "RUA VITORIA PERDAO PETIGROSSO, 115 - MAUA/SP"},
+    9: {"sigla": "DQX", "uf": "RJ", "cidade_ibge": "DUQUE DE CAXIAS", "cidade": "Duque de Caxias/RJ", "endereco": "RUA FREI CANECA, 407 - DUQUE DE CAXIAS/RJ"},
     10: {"sigla": "ARA", "uf": "PR", "cidade_ibge": "ARAUCARIA", "cidade": "Araucária/PR", "endereco": "R DOUTOR JOSE CZAKI, 320 - ARAUCARA/PR"},
+    11: {"sigla": "RIB", "uf": "SP", "cidade_ibge": "RIBEIRAO PRETO", "cidade": "Ribeirão Preto/SP", "endereco": "ROD ALEXANDRE BALBO, SN - RIBEIRÃO PRETO/SP"},
     13: {"sigla": "UBR", "uf": "MG", "cidade_ibge": "UBERLANDIA", "cidade": "Uberlândia/MG", "endereco": "R WANDELVART FARIA MARQUEZ, 500 - UBERLANDIA/MG"},
     14: {"sigla": "BRA", "uf": "DF", "cidade_ibge": "BRASILIA", "cidade": "Brasília/DF", "endereco": "ST SIN (SETOR DE INFLAMÁVEIS), SN - BRASILIA/DF"},
     15: {"sigla": "BTM", "uf": "MG", "cidade_ibge": "BETIM", "cidade": "Betim/MG", "endereco": "ROD BR-381 FERNAO DIAS, S/N, SALA A KM 485 - BETIM/MG"},
@@ -513,20 +513,37 @@ def calcular_km_trechos_por_ruas(trechos_obj, base_endereco, uf_base="RS"):
 
 
 def detectar_base_por_texto(texto):
-    txt = str(texto or "").upper()
-    if "CARIACICA" in txt: return "CAR"
-    if "CANEDO" in txt: return "SNC"
-    if "ARAUCARIA" in txt or "ARAUCÁRIA" in txt: return "ARA"
-    if "UBERLANDIA" in txt or "UBERLÂNDIA" in txt: return "UBR"
-    if "BRASILIA" in txt or "BRASÍLIA" in txt: return "BRA"
-    if "BETIM" in txt: return "BTM"
-    if "PORTO BELO" in txt: return "PTB"
-    if "JANDAIA" in txt: return "JDS"
-    return "CAN"
-    if "BRASILIA" in txt or "BRASÍLIA" in txt: return "BRA"
-    if "BETIM" in txt: return "BTM"
-    if "PORTO BELO" in txt: return "PTB"
-    if "JANDAIA" in txt: return "JDS"
+    txt_norm = normalizar_texto_sem_acento(texto)
+    if not txt_norm:
+        return "CAN"
+
+    siglas = {
+        "BRU": "BRU", "PLN": "PLN", "SVC": "SVC", "SJC": "SJC",
+        "CAR": "CAR", "CAN": "CAN", "SNC": "SNC", "MAU": "MAU",
+        "DQX": "DQX", "ARA": "ARA", "RIB": "RIB", "RBP": "RIB",
+        "UBR": "UBR", "BRA": "BRA", "BSB": "BRA", "BTM": "BTM",
+        "PTB": "PTB", "JDS": "JDS"
+    }
+    palavras = re.findall(r'[A-Z]+', txt_norm)
+    for p in palavras:
+        if p in siglas:
+            return siglas[p]
+
+    cidades = [
+        ("SAO JOSE DOS CAMPOS", "SJC"), ("S J DOS CAMPOS", "SJC"), ("SJCAMPOS", "SJC"),
+        ("DUQUE DE CAXIAS", "DQX"), ("SENADOR CANEDO", "SNC"), ("RIBEIRAO PRETO", "RIB"),
+        ("JANDAIA DO SUL", "JDS"), ("SAO VICENTE", "SVC"), ("PORTO BELO", "PTB"),
+        ("UBERLANDIA", "UBR"), ("ARAUCARIA", "ARA"), ("ARAUCARA", "ARA"),
+        ("CARIACICA", "CAR"), ("PAULINIA", "PLN"), ("PAULINA", "PLN"),
+        ("BRASILIA", "BRA"), ("BARUERI", "BRU"), ("JANDAIA", "JDS"),
+        ("CANEDO", "SNC"), ("CAXIAS", "DQX"), ("CANOAS", "CAN"),
+        ("BETIM", "BTM"), ("MAUA", "MAU")
+    ]
+    frase = " " + " ".join(palavras) + " "
+    for nome_cid, s_base in cidades:
+        if f" {nome_cid} " in frase:
+            return s_base
+
     return "CAN"
 
 
